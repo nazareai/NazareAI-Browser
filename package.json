@@ -1,0 +1,133 @@
+{
+  "name": "nazareai-browser",
+  "version": "0.1.0",
+  "description": "NazareAI Browser - AI-Powered Browser with native LLM integration and MCP support",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:electron\" \"npm run dev:renderer\"",
+    "dev:electron": "nodemon --exec 'ELECTRON_FORCE_IS_PACKAGED=true electron dist/main.js' --watch dist/main.js",
+    "dev:renderer": "vite",
+    "build": "NODE_ENV=production npm run build:renderer && npm run build:electron",
+    "build:renderer": "NODE_ENV=production vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "package": "NODE_ENV=production electron-builder",
+    "package:mac": "NODE_ENV=production electron-builder --mac",
+    "package:dmg": "NODE_ENV=production npm run build && electron-builder --mac --config.mac.target=dmg",
+    "build:dmg": "./build-dmg.sh",
+    "start": "electron dist/main.js",
+    "start:packaged": "open ./build/mac/NazareAI\\ Browser.app"
+  },
+  "keywords": [
+    "browser",
+    "ai",
+    "llm",
+    "mcp",
+    "privacy"
+  ],
+  "author": "NazareAI",
+  "license": "MIT",
+  "copyright": "Copyright © 2025 NazareAI",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/node-fetch": "^2.6.12",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^8.0.0",
+    "electron": "^37.2.1",
+    "electron-builder": "^24.0.0",
+    "eslint": "^8.0.0",
+    "nodemon": "^3.0.0",
+    "postcss": "^8.5.5",
+    "tailwindcss": "^3.4.17",
+    "terser": "^5.43.1",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@electron/remote": "^2.0.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
+    "electron-store": "^10.1.0",
+    "framer-motion": "^10.0.0",
+    "lucide-react": "^0.300.0",
+    "node-fetch": "^3.3.2",
+    "puppeteer": "^24.12.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.5.2",
+    "react-toastify": "^11.0.5",
+    "tailwind-merge": "^2.0.0",
+    "zustand": "^4.4.0"
+  },
+  "build": {
+    "appId": "com.nazareai.browser",
+    "productName": "NazareAI Browser",
+    "copyright": "Copyright © 2025 NazareAI",
+    "directories": {
+      "output": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "extendInfo": {
+        "CFBundleName": "NazareAI Browser",
+        "CFBundleDisplayName": "NazareAI Browser",
+        "CFBundleExecutable": "NazareAI Browser",
+        "LSApplicationCategoryType": "public.app-category.productivity",
+        "NSHumanReadableCopyright": "Copyright © 2025 NazareAI"
+      }
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "title": "NazareAI Browser Installer",
+      "backgroundColor": "#222222",
+      "window": {
+        "width": 540,
+        "height": 400
+      }
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

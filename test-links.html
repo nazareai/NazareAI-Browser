@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Navigation Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        a {
+            display: block;
+            margin: 10px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            text-decoration: none;
+            color: #333;
+            border-radius: 4px;
+        }
+        a:hover {
+            background: #e0e0e0;
+        }
+        h2 {
+            color: #444;
+            margin-bottom: 15px;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            background: #fffacd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Browser Link Navigation Test</h1>
+    <p>This page tests different types of link navigation patterns.</p>
+
+    <div class="test-section">
+        <h2>1. Standard Links</h2>
+        <a href="https://www.google.com">Standard link to Google</a>
+        <a href="https://www.example.com">Standard link to Example.com</a>
+        <a href="#section1">Anchor link to #section1</a>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Links with Target</h2>
+        <a href="https://www.google.com" target="_blank">Link with target="_blank" (new window)</a>
+        <a href="https://www.google.com" target="_self">Link with target="_self" (same window)</a>
+        <a href="https://www.google.com" target="_top">Link with target="_top"</a>
+    </div>
+
+    <div class="test-section">
+        <h2>3. JavaScript Links</h2>
+        <a href="javascript:void(0)" onclick="window.location.href='https://www.google.com'">onclick with location.href</a>
+        <a href="javascript:void(0)" onclick="window.open('https://www.google.com', '_self')">onclick with window.open(_self)</a>
+        <a href="javascript:void(0)" onclick="handleClick(event)">onclick with function call</a>
+        <a href="#" onclick="event.preventDefault(); window.location='https://www.google.com'">onclick with preventDefault</a>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Special Cases</h2>
+        <a href="https://www.google.com" onclick="return true;">Link with onclick return true</a>
+        <a href="https://www.google.com" onclick="return false;">Link with onclick return false</a>
+        <a href="https://www.google.com" id="delayed-link">Link with event listener (added after load)</a>
+        <a href="https://www.google.com" download>Link with download attribute</a>
+    </div>
+
+    <div class="test-section">
+        <h2>5. Programmatic Navigation</h2>
+        <button onclick="window.location.href='https://www.google.com'">Button: location.href</button>
+        <button onclick="window.location.assign('https://www.google.com')">Button: location.assign</button>
+        <button onclick="window.location.replace('https://www.google.com')">Button: location.replace</button>
+        <button onclick="window.open('https://www.google.com', '_self')">Button: window.open(_self)</button>
+    </div>
+
+    <div class="test-section">
+        <h2>6. Complex Scenarios</h2>
+        <a href="https://www.google.com" class="spa-link">SPA-style link (listener added via class)</a>
+        <div onclick="window.location.href='https://www.google.com'" style="cursor: pointer; text-decoration: underline; color: blue;">
+            Div acting as a link
+        </div>
+        <a href="https://www.google.com" onclick="setTimeout(() => window.location.href = this.href, 100); return false;">
+            Delayed navigation with setTimeout
+        </a>
+    </div>
+
+    <div class="status" id="status">
+        <strong>Status:</strong> <span id="status-text">Ready for testing</span>
+    </div>
+
+    <div id="section1" style="margin-top: 1000px; padding: 20px; background: #f0f0f0;">
+        <h2>Section 1 (Anchor Target)</h2>
+        <p>This is the target of the anchor link above.</p>
+    </div>
+
+    <script>
+        // Log all clicks for debugging
+        document.addEventListener('click', function(e) {
+            const status = document.getElementById('status-text');
+            if (e.target.tagName === 'A') {
+                status.textContent = `Clicked: ${e.target.textContent} - href: ${e.target.href}`;
+                console.log('Test page: Link clicked', e.target.href);
+            }
+        });
+
+        // Function for testing
+        function handleClick(e) {
+            e.preventDefault();
+            console.log('handleClick called');
+            window.location.href = 'https://www.google.com';
+        }
+
+        // Add event listener to delayed link
+        document.addEventListener('DOMContentLoaded', function() {
+            const delayedLink = document.getElementById('delayed-link');
+            if (delayedLink) {
+                delayedLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Delayed link clicked, navigating...');
+                    window.location.href = e.target.href;
+                });
+            }
+
+            // Add SPA-style navigation
+            document.querySelectorAll('.spa-link').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('SPA navigation to:', e.target.href);
+                    // Simulate SPA navigation
+                    history.pushState({}, '', e.target.href);
+                    window.location.href = e.target.href;
+                });
+            });
+        });
+
+        // Log page load
+        console.log('Test page loaded:', window.location.href);
+    </script>
+</body>
+</html> 

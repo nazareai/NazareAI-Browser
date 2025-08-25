@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Command Test Page</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+      background-color: #f5f5f5;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .test-section {
+      margin: 30px 0;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #007bff;
+    }
+    .test-section h2 {
+      color: #007bff;
+      margin-top: 0;
+    }
+    .command-example {
+      background: #e7f3ff;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      font-family: monospace;
+      border: 1px solid #b3d9ff;
+    }
+    .link-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .link-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      text-decoration: none;
+      color: #333;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .link-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .link-card h3 {
+      margin: 0 0 10px 0;
+      color: #007bff;
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+    }
+    .test-button {
+      padding: 10px 20px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.2s;
+    }
+    .test-button:hover {
+      background: #0056b3;
+    }
+    .test-button.secondary {
+      background: #6c757d;
+    }
+    .test-button.success {
+      background: #28a745;
+    }
+    .test-button.danger {
+      background: #dc3545;
+    }
+    .form-section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      margin: 20px 0;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .form-group input, .form-group textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .status-indicator {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      font-weight: bold;
+    }
+    .status-success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .status-warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+    .status-error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🤖 AI Command Test Page</h1>
+    
+    <div class="status-indicator status-success">
+      ✅ This page is designed to test AI command processing without styling conflicts
+    </div>
+    
+    <div class="test-section">
+      <h2>🎯 Navigation Commands</h2>
+      <p>Test these commands in the address bar:</p>
+      <div class="command-example">go to google.com</div>
+      <div class="command-example">visit youtube</div>
+      <div class="command-example">navigate to github.com</div>
+      <div class="command-example">open reddit</div>
+    </div>
+    
+    <div class="test-section">
+      <h2>🔗 Click Commands</h2>
+      <p>Test these commands to click elements on this page:</p>
+      <div class="command-example">click the contact button</div>
+      <div class="command-example">open the about link</div>
+      <div class="command-example">press the submit button</div>
+      <div class="command-example">click login</div>
+      
+      <div class="link-grid">
+        <a href="#about" class="link-card">
+          <h3>About</h3>
+          <p>Learn more about this test page</p>
+        </a>
+        <a href="#contact" class="link-card">
+          <h3>Contact</h3>
+          <p>Get in touch with support</p>
+        </a>
+        <a href="#services" class="link-card">
+          <h3>Services</h3>
+          <p>Explore our offerings</p>
+        </a>
+        <a href="#login" class="link-card">
+          <h3>Login</h3>
+          <p>Access your account</p>
+        </a>
+      </div>
+    </div>
+    
+    <div class="test-section">
+      <h2>📊 Content Extraction Commands</h2>
+      <p>Test these commands to extract page content:</p>
+      <div class="command-example">extract all links</div>
+      <div class="command-example">get all buttons</div>
+      <div class="command-example">find all forms</div>
+      <div class="command-example">list all headings</div>
+      
+      <div class="button-group">
+        <button class="test-button">Submit Form</button>
+        <button class="test-button secondary">Cancel</button>
+        <button class="test-button success">Save Changes</button>
+        <button class="test-button danger">Delete Item</button>
+      </div>
+    </div>
+    
+    <div class="test-section">
+      <h2>📝 Form Interaction Commands</h2>
+      <p>Test these commands to interact with forms:</p>
+      <div class="command-example">fill the contact form</div>
+      <div class="command-example">submit the form</div>
+      <div class="command-example">click the submit button</div>
+      
+      <div class="form-section">
+        <h3>Contact Form</h3>
+        <form>
+          <div class="form-group">
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" placeholder="Enter your name">
+          </div>
+          <div class="form-group">
+            <label for="email">Email:</label>
+            <input type="email" id="email" name="email" placeholder="Enter your email">
+          </div>
+          <div class="form-group">
+            <label for="message">Message:</label>
+            <textarea id="message" name="message" rows="4" placeholder="Enter your message"></textarea>
+          </div>
+          <button type="submit" class="test-button">Submit Form</button>
+        </form>
+      </div>
+    </div>
+    
+    <div class="test-section">
+      <h2>🎮 Scroll Commands</h2>
+      <p>Test these commands to scroll the page:</p>
+      <div class="command-example">scroll down</div>
+      <div class="command-example">scroll to top</div>
+      <div class="command-example">scroll to bottom</div>
+      <div class="command-example">scroll up</div>
+    </div>
+    
+    <div class="test-section">
+      <h2>🔍 Search Commands</h2>
+      <p>Test these commands to search the web:</p>
+      <div class="command-example">search for weather</div>
+      <div class="command-example">find AI news</div>
+      <div class="command-example">look for recipes</div>
+      <div class="command-example">search programming tutorials</div>
+    </div>
+    
+    <div class="test-section">
+      <h2>🛠️ Styling Preservation Test</h2>
+      <div class="status-indicator status-warning">
+        ⚠️ Important: After running AI commands, this page should maintain its styling
+      </div>
+      <p>This section tests that AI command processing doesn't break page styling:</p>
+      <ul>
+        <li>Colors should remain consistent</li>
+        <li>Layout should not be disrupted</li>
+        <li>Animations and transitions should work</li>
+        <li>CSS classes should remain applied</li>
+      </ul>
+      
+      <div class="status-indicator status-success">
+        ✅ If you can see this styled message after running commands, the fix is working!
+      </div>
+    </div>
+    
+    <div class="test-section">
+      <h2>💬 Chat Integration Test</h2>
+      <div class="status-indicator status-warning">
+        ⚠️ Open the AI chat panel and test that it works alongside command processing
+      </div>
+      <p>Test these scenarios:</p>
+      <ol>
+        <li>Run an AI command in the address bar</li>
+        <li>Immediately open the chat and ask a question</li>
+        <li>Verify both functions work without conflicts</li>
+        <li>Check that page styling remains intact</li>
+      </ol>
+    </div>
+  </div>
+  
+  <script>
+    // Add some interactive behavior to test JavaScript functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      const buttons = document.querySelectorAll('.test-button');
+      buttons.forEach(button => {
+        button.addEventListener('click', function(e) {
+          e.preventDefault();
+          console.log('Button clicked:', this.textContent);
+          
+          // Create a temporary success indicator
+          const indicator = document.createElement('div');
+          indicator.className = 'status-indicator status-success';
+          indicator.textContent = `✅ ${this.textContent} clicked successfully!`;
+          indicator.style.position = 'fixed';
+          indicator.style.top = '10px';
+          indicator.style.right = '10px';
+          indicator.style.zIndex = '1000';
+          indicator.style.minWidth = '300px';
+          
+          document.body.appendChild(indicator);
+          
+          // Remove after 3 seconds
+          setTimeout(() => {
+            document.body.removeChild(indicator);
+          }, 3000);
+        });
+      });
+      
+      // Test that CSS is working
+      console.log('✅ JavaScript is working - CSS and styling should be preserved');
+    });
+  </script>
+</body>
+</html> 

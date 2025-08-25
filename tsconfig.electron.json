@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "jsx": "preserve",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["electron/**/*"],
+  "exclude": ["src/**/*", "node_modules"]
+} 
