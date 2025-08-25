@@ -675,13 +675,13 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
         plugins="true"
         // @ts-ignore
         nodeintegration="false"
-        webpreferences="contextIsolation=true,javascript=true,webgl=true,accelerated2dCanvas=true,backgroundThrottling=false,experimentalFeatures=true,nativeWindowOpen=true,enableBlinkFeatures=CSSColorSchemeUARendering,offscreen=true"
+        webpreferences="javascript=true,webgl=true,webSecurity=true,allowRunningInsecureContent=false,nodeIntegration=false,contextIsolation=true"
         // @ts-ignore
         disablewebsecurity="false"
         // @ts-ignore
         autosize="on"
         // @ts-ignore
-        preload="file://"
+        preload=""
         style={{
           width: '100%',
           height: '100%',
