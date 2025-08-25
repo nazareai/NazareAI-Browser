@@ -58,7 +58,8 @@ interface BrowserState {
   updateTab: (tabId: string, updates: Partial<Tab>) => void
   navigateTab: (tabId: string, url: string) => void
   setSearchEngine: (engine: string) => void
-  getCurrentPageContent: () => Promise<string>
+        getCurrentPageContent: () => Promise<string>
+      getPageElements: () => Promise<string>
   hibernateTab: (tabId: string) => void
   
   // AI Browser Control Actions
@@ -167,16 +168,396 @@ export const useBrowserStore = create<BrowserState>()(
       },
       
       navigateTab: (tabId: string, url: string) => {
-        const { updateTab } = get()
-        updateTab(tabId, { url, isLoading: true })
-        
-        // Don't use IPC for navigation - let the webview handle it
+        const { updateTab, tabs } = get()
+        const tab = tabs.find(t => t.id === tabId)
+
+        if (tab) {
+          console.log('🧭 Navigating tab:', { tabId, url, currentUrl: tab.url })
+
+          // Update tab state
+          updateTab(tabId, { url, isLoading: true })
+
+          // Actually navigate the webview
+          if (typeof window !== 'undefined') {
+            const webview = document.querySelector(`webview[data-tab-id="${tabId}"]`) as any
+            if (webview) {
+              console.log('🧭 Loading URL in webview:', url)
+              webview.loadURL(url)
+            } else {
+              console.error('🧭 Webview not found for tab:', tabId)
+            }
+          }
+        } else {
+          console.error('🧭 Tab not found:', tabId)
+        }
       },
       
       setSearchEngine: (engine: string) => {
         set({ searchEngine: engine })
       },
       
+      getPageElements: async () => {
+        const { currentTab } = get()
+        console.log('🔍 getPageElements called:', { currentTab: currentTab?.url })
+
+        if (!currentTab || currentTab.url === 'about:blank') {
+          console.log('🔍 No current tab or about:blank')
+          return ''
+        }
+
+        try {
+          // Get the webview element
+          const webview = document.querySelector('webview') as any
+          if (!webview) {
+            console.log('❌ No webview found')
+            return ''
+          }
+
+          // Check if it's a PDF
+          const isPDF = currentTab.url.toLowerCase().includes('.pdf') ||
+                       currentTab.url.toLowerCase().includes('application/pdf')
+
+          console.log('🔍 Element extraction info:', { isPDF, url: currentTab.url })
+
+          if (isPDF) {
+            return 'PDF Document - Interactive elements extraction not supported for PDFs'
+          }
+
+          // Extract interactive elements and page structure
+          const result = await webview.executeJavaScript(`
+            (() => {
+              try {
+                const elements = {
+                  pageInfo: {
+                    title: document.title,
+                    url: window.location.href,
+                    domain: window.location.hostname,
+                    readyState: document.readyState
+                  },
+                  forms: [],
+                  inputs: [],
+                  buttons: [],
+                  links: [],
+                  navigation: [],
+                  searchForms: [],
+                  interactiveElements: []
+                }
+
+                // Extract forms and their inputs
+                const forms = document.querySelectorAll('form')
+                forms.forEach((form: any, formIndex: number) => {
+                  const formInputs = []
+                  const inputs = form.querySelectorAll('input, textarea, select')
+                  inputs.forEach((input: any, inputIndex: number) => {
+                    formInputs.push({
+                      type: input.type || input.tagName.toLowerCase(),
+                      name: input.name || input.id || '',
+                      placeholder: input.placeholder || '',
+                      value: input.value || '',
+                      required: input.hasAttribute('required'),
+                      disabled: input.disabled,
+                      id: input.id || '',
+                      className: input.className || '',
+                      ariaLabel: input.getAttribute('aria-label') || '',
+                      dataAttributes: Array.from(input.attributes)
+                        .filter(attr => attr.name.startsWith('data-'))
+                        .map(attr => ({ name: attr.name, value: attr.value }))
+                    })
+                  })
+
+                  elements.forms.push({
+                    index: formIndex,
+                    action: form.action || '',
+                    method: form.method || 'get',
+                    id: form.id || '',
+                    className: form.className || '',
+                    inputs: formInputs,
+                    submitButtons: Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'))
+                      .map((btn: any, btnIndex: number) => ({
+                        type: btn.type || btn.tagName.toLowerCase(),
+                        text: btn.textContent?.trim() || btn.value || '',
+                        id: btn.id || '',
+                        className: btn.className || ''
+                      }))
+                  })
+                })
+
+                // Extract all input elements (not just in forms)
+                const allInputs = document.querySelectorAll('input, textarea, select')
+                allInputs.forEach((input: any, index: number) => {
+                  if (input.type !== 'hidden') {
+                    elements.inputs.push({
+                      type: input.type || input.tagName.toLowerCase(),
+                      name: input.name || input.id || '',
+                      placeholder: input.placeholder || '',
+                      value: input.value || '',
+                      id: input.id || '',
+                      className: input.className || '',
+                      ariaLabel: input.getAttribute('aria-label') || '',
+                      dataAttributes: Array.from(input.attributes)
+                        .filter(attr => attr.name.startsWith('data-'))
+                        .map(attr => ({ name: attr.name, value: attr.value }))
+                    })
+                  }
+                })
+
+                // Extract buttons
+                const buttons = document.querySelectorAll('button, [role="button"], input[type="submit"], input[type="button"]')
+                buttons.forEach((button: any, index: number) => {
+                  elements.buttons.push({
+                    type: button.type || button.tagName.toLowerCase(),
+                    text: button.textContent?.trim() || button.value || '',
+                    id: button.id || '',
+                    className: button.className || '',
+                    ariaLabel: button.getAttribute('aria-label') || '',
+                    disabled: button.disabled,
+                    onclick: button.onclick ? 'has onclick handler' : 'none',
+                    href: button.tagName.toLowerCase() === 'a' ? button.href : ''
+                  })
+                })
+
+                // Extract important links
+                const links = document.querySelectorAll('a[href]')
+                const importantLinks = Array.from(links)
+                  .filter(link => {
+                    const text = link.textContent?.trim() || ''
+                    const href = link.href || ''
+                    return text.length > 0 && !href.includes('#') && !href.includes('javascript:')
+                  })
+                  .slice(0, 50) // Limit to 50 most important links
+
+                importantLinks.forEach(link => {
+                  elements.links.push({
+                    text: link.textContent?.trim() || '',
+                    href: link.href,
+                    id: link.id || '',
+                    className: link.className || '',
+                    ariaLabel: link.getAttribute('aria-label') || ''
+                  })
+                })
+
+                // Extract navigation elements
+                const navElements = document.querySelectorAll('nav, [role="navigation"], .nav, .navbar, .menu, .navigation')
+                navElements.forEach(nav => {
+                  const navLinks = Array.from(nav.querySelectorAll('a'))
+                    .map(link => ({
+                      text: link.textContent?.trim() || '',
+                      href: link.href || '',
+                      id: link.id || ''
+                    }))
+
+                  if (navLinks.length > 0) {
+                    elements.navigation.push({
+                      id: nav.id || '',
+                      className: nav.className || '',
+                      links: navLinks
+                    })
+                  }
+                })
+
+                // Extract search forms
+                const searchSelectors = [
+                  'form[action*="search"]',
+                  'form[class*="search"]',
+                  'form[id*="search"]',
+                  '.search-form',
+                  '#search-form',
+                  '[role="search"]',
+                  'input[placeholder*="search" i]',
+                  'input[name*="search" i]'
+                ]
+
+                searchSelectors.forEach((selector: string) => {
+                  const elements = document.querySelectorAll(selector)
+                  elements.forEach((element: any, formIndex: number) => {
+                    if (element.tagName.toLowerCase() === 'form' || element.querySelector('input')) {
+                      const form = element.tagName.toLowerCase() === 'form' ? element : element.closest('form') || element
+                      const inputs = form.querySelectorAll('input, textarea')
+
+                      elements.searchForms.push({
+                        selector: selector,
+                        action: form.action || '',
+                        method: form.method || 'get',
+                        inputs: Array.from(inputs).map((input: any, inputIndex: number) => ({
+                          type: input.type || '',
+                          name: input.name || '',
+                          placeholder: input.placeholder || '',
+                          id: input.id || ''
+                        }))
+                      })
+                    }
+                  })
+                })
+
+                // Extract key interactive elements (like browser-use does)
+                const interactiveSelectors = [
+                  '[data-testid], [data-cy], [data-e2e]',
+                  '.btn, .button, .action',
+                  '[onclick], [onchange], [onsubmit]',
+                  '[role="button"], [role="link"], [role="tab"]',
+                  '.clickable, .interactive',
+                  'select, option'
+                ]
+
+                interactiveSelectors.forEach((selector: string) => {
+                  const elements = document.querySelectorAll(selector)
+                  elements.forEach((element: any, index: number) => {
+                    if (!elements.interactiveElements.some((e: any) => e.element === element)) {
+                      elements.interactiveElements.push({
+                        selector: selector,
+                        tagName: element.tagName.toLowerCase(),
+                        text: element.textContent?.trim() || '',
+                        id: element.id || '',
+                        className: element.className || '',
+                        attributes: Array.from(element.attributes)
+                          .filter((attr: any) => attr.name.startsWith('data-') || ['id', 'class', 'name', 'placeholder', 'aria-label', 'role'].includes(attr.name))
+                          .map((attr: any) => ({ name: attr.name, value: attr.value })),
+                        boundingRect: element.getBoundingClientRect ? {
+                          x: Math.round(element.getBoundingClientRect().x),
+                          y: Math.round(element.getBoundingClientRect().y),
+                          width: Math.round(element.getBoundingClientRect().width),
+                          height: Math.round(element.getBoundingClientRect().height)
+                        } : null,
+                        isVisible: element.offsetWidth > 0 && element.offsetHeight > 0
+                      })
+                    }
+                  })
+                })
+
+                return elements
+              } catch (error) {
+                return {
+                  error: error.message || String(error),
+                  pageInfo: {
+                    title: document.title || 'Error',
+                    url: window.location.href,
+                    error: 'Element extraction failed'
+                  },
+                  forms: [],
+                  inputs: [],
+                  buttons: [],
+                  links: [],
+                  navigation: [],
+                  searchForms: [],
+                  interactiveElements: []
+                }
+              }
+            })()
+          `)
+
+          console.log('🔍 Element extraction result:', result)
+
+          if (result.error) {
+            return `Error extracting page elements: ${result.error}`
+          }
+
+          // Format the extracted elements for LLM consumption
+          let output = `=== PAGE ELEMENTS ANALYSIS ===\n`
+          output += `Title: ${result.pageInfo.title}\n`
+          output += `URL: ${result.pageInfo.url}\n`
+          output += `Domain: ${result.pageInfo.domain}\n`
+          output += `Ready State: ${result.pageInfo.readyState}\n\n`
+
+          // Forms section
+          if (result.forms && result.forms.length > 0) {
+            output += `=== FORMS (${result.forms.length}) ===\n`
+            result.forms.forEach((form: any, index: number) => {
+              output += `Form ${index + 1}:\n`
+              output += `  Action: ${form.action}\n`
+              output += `  Method: ${form.method}\n`
+              if (form.id) output += `  ID: ${form.id}\n`
+              if (form.className) output += `  Class: ${form.className}\n`
+              output += `  Inputs: ${form.inputs.length}\n`
+
+              form.inputs.forEach((input: any, inputIndex: number) => {
+                output += `    Input ${inputIndex + 1}: ${input.type} "${input.name || input.placeholder || input.id}"\n`
+                if (input.value) output += `      Value: "${input.value}"\n`
+                if (input.required) output += `      Required: Yes\n`
+                if (input.placeholder) output += `      Placeholder: "${input.placeholder}"\n`
+              })
+
+              if (form.submitButtons.length > 0) {
+                output += `  Submit Buttons: ${form.submitButtons.length}\n`
+                form.submitButtons.forEach((btn: any, btnIndex: number) => {
+                  output += `    Button ${btnIndex + 1}: "${btn.text}"\n`
+                })
+              }
+              output += '\n'
+            })
+          }
+
+          // Inputs section
+          if (result.inputs && result.inputs.length > 0) {
+            output += `=== INPUTS (${result.inputs.length}) ===\n`
+            result.inputs.forEach((input: any, index: number) => {
+              output += `Input ${index + 1}: ${input.type} "${input.name || input.placeholder || input.id}"\n`
+              if (input.value) output += `  Value: "${input.value}"\n`
+              if (input.placeholder) output += `  Placeholder: "${input.placeholder}"\n`
+              if (input.ariaLabel) output += `  Aria Label: "${input.ariaLabel}"\n`
+              output += '\n'
+            })
+          }
+
+          // Buttons section
+          if (result.buttons && result.buttons.length > 0) {
+            output += `=== BUTTONS (${result.buttons.length}) ===\n`
+            result.buttons.forEach((button: any, index: number) => {
+              output += `Button ${index + 1}: "${button.text}" (${button.type})\n`
+              if (button.id) output += `  ID: ${button.id}\n`
+              if (button.className) output += `  Class: ${button.className}\n`
+              if (button.ariaLabel) output += `  Aria Label: "${button.ariaLabel}"\n`
+              output += '\n'
+            })
+          }
+
+          // Search forms section
+          if (result.searchForms && result.searchForms.length > 0) {
+            output += `=== SEARCH FORMS (${result.searchForms.length}) ===\n`
+            result.searchForms.forEach((form: any, index: number) => {
+              output += `Search Form ${index + 1}:\n`
+              output += `  Action: ${form.action}\n`
+              output += `  Method: ${form.method}\n`
+              output += `  Inputs: ${form.inputs.length}\n`
+              form.inputs.forEach((input: any, inputIndex: number) => {
+                output += `    Input ${inputIndex + 1}: ${input.type} "${input.name || input.placeholder}"\n`
+              })
+              output += '\n'
+            })
+          }
+
+          // Interactive elements section
+          if (result.interactiveElements && result.interactiveElements.length > 0) {
+            output += `=== INTERACTIVE ELEMENTS (${result.interactiveElements.length}) ===\n`
+            result.interactiveElements.forEach((element: any, index: number) => {
+              output += `Element ${index + 1}: ${element.tagName}`
+              if (element.text) output += ` "${element.text}"`
+              if (element.id) output += ` #${element.id}`
+              if (element.className) output += ` .${element.className}`
+              output += '\n'
+
+              if (element.attributes && element.attributes.length > 0) {
+                output += `  Attributes:\n`
+                element.attributes.forEach((attr: any) => {
+                  output += `    ${attr.name}: "${attr.value}"\n`
+                })
+              }
+
+              if (element.boundingRect) {
+                output += `  Position: ${element.boundingRect.x}, ${element.boundingRect.y} (${element.boundingRect.width}x${element.boundingRect.height})\n`
+              }
+
+              output += `  Visible: ${element.isVisible}\n\n`
+            })
+          }
+
+          return output
+
+        } catch (error) {
+          console.error('❌ Error extracting page elements:', error)
+          return `Error extracting page elements: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }
+      },
+
       getCurrentPageContent: async () => {
         const { currentTab } = get()
         console.log('🟢 getCurrentPageContent called:', { currentTab: currentTab?.url })
@@ -393,11 +774,75 @@ ${fullContent}`
               if (!action.selector) throw new Error('Selector required for clickElement')
               return await get().executePageScript(`document.querySelector('${action.selector}').click()`)
             case 'fillForm':
-              if (!action.formData || !action.selector) throw new Error('Form data and selector required')
-              const fillScript = Object.entries(action.formData).map(([key, value]) =>
-                `document.querySelector('[name="${key}"]').value = '${value}';`
-              ).join('')
-              return await get().executePageScript(fillScript)
+              if (!action.text && !action.formData) throw new Error('Text or form data required for fillForm')
+              
+              // If we have text, try to fill the most likely input field
+              if (action.text) {
+                const fillTextScript = `
+                  (() => {
+                    const text = '${action.text.replace(/'/g, "\\'")}';
+                    const selector = '${action.selector || ''}';
+                    
+                    // Try to find the right input field
+                    let input = null;
+                    
+                    if (selector) {
+                      // Use provided selector
+                      input = document.querySelector(selector);
+                    } else {
+                      // Find the most likely input field
+                      // Priority: focused element, visible text inputs, first text input
+                      input = document.activeElement;
+                      
+                      if (!input || input.tagName !== 'INPUT') {
+                        const visibleInputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type]), input[type="search"], textarea'))
+                          .filter(el => el.offsetWidth > 0 && el.offsetHeight > 0);
+                        
+                        if (visibleInputs.length > 0) {
+                          input = visibleInputs[0];
+                        }
+                      }
+                    }
+                    
+                    if (input) {
+                      // Focus the input
+                      input.focus();
+                      
+                      // Clear existing value
+                      input.value = '';
+                      
+                      // Set new value
+                      input.value = text;
+                      
+                      // Trigger input events
+                      input.dispatchEvent(new Event('input', { bubbles: true }));
+                      input.dispatchEvent(new Event('change', { bubbles: true }));
+                      
+                      return { success: true, message: 'Text entered successfully' };
+                    } else {
+                      return { success: false, message: 'No input field found' };
+                    }
+                  })()
+                `
+                
+                const webview = document.querySelector('webview') as any
+                if (!webview) {
+                  return { success: false, message: 'No active webview' }
+                }
+                
+                const result = await webview.executeJavaScript(fillTextScript)
+                return result
+              }
+              
+              // Original form data filling logic
+              if (action.formData) {
+                const fillScript = Object.entries(action.formData).map(([key, value]) =>
+                  `document.querySelector('[name="${key}"]').value = '${value}';`
+                ).join('')
+                return await get().executePageScript(fillScript)
+              }
+              
+              return { success: false, message: 'No text or form data provided' }
             case 'waitForElement':
               return await get().waitForElement(action.selector || '', action.timeout)
             case 'findAndClick':
@@ -752,28 +1197,69 @@ ${fullContent}`
 
       // Advanced AI Browser Control Actions
       waitForElement: async (selector: string, timeout?: number) => {
-        try {
-          const script = `
-            const selector = '${selector.replace(/'/g, "\\'")}';
-            const timeout = ${timeout || 'undefined'};
-            const result = (() => {
-              const element = document.querySelector(selector);
-              if (element) {
-                return { success: true, message: 'Element found', data: element };
-              } else {
-                throw new Error('Element not found');
-              }
-            })();
-            result
-          `
-          
-          const result = await get().executePageScript(script)
-          return result
-        } catch (error) {
-          return {
-            success: false,
-            message: `Failed to wait for element: ${error instanceof Error ? error.message : 'Unknown error'}`
+        const maxTimeout = timeout || 10000 // Default 10 seconds
+        const checkInterval = 500 // Check every 500ms
+        const maxChecks = maxTimeout / checkInterval
+
+        console.log(`⏳ Waiting for element: ${selector} (timeout: ${maxTimeout}ms)`)
+
+        for (let i = 0; i < maxChecks; i++) {
+          try {
+            const script = `
+              const selector = '${selector.replace(/'/g, "\\'")}';
+              const result = (() => {
+                const element = document.querySelector(selector);
+                if (element) {
+                  // Check if element is visible
+                  const rect = element.getBoundingClientRect();
+                  const isVisible = rect.width > 0 && rect.height > 0 &&
+                                  element.offsetWidth > 0 && element.offsetHeight > 0;
+
+                  return {
+                    success: true,
+                    message: 'Element found and ready',
+                    data: {
+                      tagName: element.tagName.toLowerCase(),
+                      id: element.id,
+                      className: element.className,
+                      textContent: element.textContent?.trim().substring(0, 100),
+                      isVisible: isVisible,
+                      boundingRect: {
+                        x: Math.round(rect.x),
+                        y: Math.round(rect.y),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height)
+                      }
+                    }
+                  };
+                } else {
+                  return { success: false, message: 'Element not found' };
+                }
+              })();
+              result
+            `
+
+            const result = await get().executePageScript(script)
+
+            if (result.success) {
+              console.log(`✅ Element found after ${(i + 1) * checkInterval}ms:`, result.data)
+              return result
+            }
+
+            // Wait before next check
+            await new Promise(resolve => setTimeout(resolve, checkInterval))
+
+          } catch (error) {
+            console.log(`⚠️ Wait check ${i + 1} failed:`, error)
+            // Continue trying even if there's an error
+            await new Promise(resolve => setTimeout(resolve, checkInterval))
           }
+        }
+
+        console.log(`❌ Element not found after ${maxTimeout}ms: ${selector}`)
+        return {
+          success: false,
+          message: `Element not found after ${maxTimeout}ms: ${selector}`
         }
       },
       smartFillForm: async (formDescription: string, userData?: Record<string, string>) => {
@@ -813,23 +1299,138 @@ ${fullContent}`
       },
       findAndClick: async (elementDescription: string) => {
         try {
-          const script = `
-            const elementDescription = '${elementDescription.replace(/'/g, "\\'")}';
-            const result = (() => {
-              const element = document.querySelector(elementDescription);
-              if (element) {
-                element.click();
-                return { success: true, message: 'Element clicked successfully' };
-              } else {
-                throw new Error('Element not found');
+          console.log('🎯 findAndClick called with:', elementDescription)
+          
+          // First, try to find the element using various strategies
+          const findScript = `
+            (() => {
+              const description = '${elementDescription.replace(/'/g, "\\'")}';
+              const lowerDesc = description.toLowerCase();
+              
+              // Strategy 1: Try as CSS selector
+              try {
+                const element = document.querySelector(description);
+                if (element && element.offsetWidth > 0 && element.offsetHeight > 0) {
+                  return { found: true, strategy: 'css', selector: description };
+                }
+              } catch (e) {
+                // Not a valid CSS selector, continue
               }
-            })();
-            result
+              
+              // Strategy 2: Find by text content
+              const allElements = document.querySelectorAll('button, a, input[type="submit"], input[type="button"], [role="button"], [role="link"]');
+              for (const el of allElements) {
+                const text = (el.textContent || el.value || '').trim().toLowerCase();
+                const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+                const placeholder = (el.getAttribute('placeholder') || '').toLowerCase();
+                
+                if (text.includes(lowerDesc) || ariaLabel.includes(lowerDesc) || placeholder.includes(lowerDesc)) {
+                  // Generate a selector for this element
+                  let selector = el.tagName.toLowerCase();
+                  if (el.id) selector = '#' + el.id;
+                  else if (el.className) selector += '.' + el.className.split(' ')[0];
+                  
+                  return { found: true, strategy: 'text', selector: selector, text: text };
+                }
+              }
+              
+              // Strategy 3: Find by partial match
+              for (const el of allElements) {
+                const text = (el.textContent || el.value || '').trim().toLowerCase();
+                const words = lowerDesc.split(' ');
+                
+                if (words.every(word => text.includes(word))) {
+                  let selector = el.tagName.toLowerCase();
+                  if (el.id) selector = '#' + el.id;
+                  else if (el.className) selector += '.' + el.className.split(' ')[0];
+                  
+                  return { found: true, strategy: 'partial', selector: selector, text: text };
+                }
+              }
+              
+              // Strategy 4: Find input fields by name or placeholder
+              if (lowerDesc.includes('input') || lowerDesc.includes('field')) {
+                const inputs = document.querySelectorAll('input, textarea, select');
+                for (const input of inputs) {
+                  const name = (input.name || '').toLowerCase();
+                  const placeholder = (input.placeholder || '').toLowerCase();
+                  const label = (input.getAttribute('aria-label') || '').toLowerCase();
+                  
+                  if (name.includes(lowerDesc.replace('input', '').replace('field', '').trim()) ||
+                      placeholder.includes(lowerDesc.replace('input', '').replace('field', '').trim()) ||
+                      label.includes(lowerDesc.replace('input', '').replace('field', '').trim())) {
+                    let selector = input.tagName.toLowerCase();
+                    if (input.id) selector = '#' + input.id;
+                    else if (input.name) selector += '[name="' + input.name + '"]';
+                    
+                    return { found: true, strategy: 'input', selector: selector };
+                  }
+                }
+              }
+              
+              return { found: false, message: 'Element not found using any strategy' };
+            })()
           `
           
-          const result = await get().executePageScript(script)
-          return result
+          const webview = document.querySelector('webview') as any
+          if (!webview) {
+            return { success: false, message: 'No active webview' }
+          }
+          
+          // Find the element first
+          const findResult = await webview.executeJavaScript(findScript)
+          console.log('🔍 Find result:', findResult)
+          
+          if (!findResult.found) {
+            return {
+              success: false,
+              message: `Could not find element matching: ${elementDescription}`
+            }
+          }
+          
+          // Now click the found element
+          const clickScript = `
+            (() => {
+              const selector = '${findResult.selector.replace(/'/g, "\\'")}';
+              const element = document.querySelector(selector);
+              
+              if (element) {
+                // Scroll element into view
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Wait a bit for scroll to complete
+                setTimeout(() => {
+                  // Trigger click
+                  element.click();
+                  
+                  // Also trigger mousedown/mouseup for better compatibility
+                  const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+                  const mouseUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true });
+                  const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+                  
+                  element.dispatchEvent(mouseDown);
+                  element.dispatchEvent(mouseUp);
+                  element.dispatchEvent(click);
+                }, 500);
+                
+                return { success: true, message: 'Element clicked successfully' };
+              } else {
+                return { success: false, message: 'Element disappeared before click' };
+              }
+            })()
+          `
+          
+          const clickResult = await webview.executeJavaScript(clickScript)
+          console.log('🖱️ Click result:', clickResult)
+          
+          return {
+            success: true,
+            message: `Clicked element using ${findResult.strategy} strategy: ${findResult.selector}`,
+            data: findResult
+          }
+          
         } catch (error) {
+          console.error('❌ findAndClick error:', error)
           return {
             success: false,
             message: `Failed to find and click element: ${error instanceof Error ? error.message : 'Unknown error'}`

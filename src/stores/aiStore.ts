@@ -1,5 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useBrowserStore } from './browserStore'
+
+// Helper function to get browser store state
+const getBrowserStore = () => useBrowserStore.getState()
 
 export interface AIProvider {
   id: string
@@ -34,6 +38,27 @@ export interface DomainChat {
 // Import browser action types from browserStore
 import type { BrowserAction, BrowserActionResult } from './browserStore'
 
+// Enhanced interfaces for agentic workflows
+export interface WorkflowStep {
+  id: string
+  description: string
+  action: BrowserAction
+  status: 'pending' | 'executing' | 'completed' | 'failed'
+  result?: BrowserActionResult
+  timestamp: Date
+}
+
+export interface AgenticWorkflow {
+  id: string
+  goal: string
+  steps: WorkflowStep[]
+  currentStep: number
+  status: 'planning' | 'executing' | 'completed' | 'failed'
+  results: BrowserActionResult[]
+  startTime: Date
+  endTime?: Date
+}
+
 interface AIState {
   providers: AIProvider[]
   activeProvider: string | null
@@ -45,7 +70,11 @@ interface AIState {
   streamingMessageId: string | null
   browserControlEnabled: boolean
   mcpServers: string[];
-  
+
+  // Agentic workflow state
+  currentWorkflow: AgenticWorkflow | null
+  workflowEnabled: boolean
+
   // Actions
   addProvider: (provider: Omit<AIProvider, 'id'>) => void
   updateProvider: (id: string, updates: Partial<AIProvider>) => void
@@ -62,7 +91,13 @@ interface AIState {
   executeBrowserActions: (actions: BrowserAction[]) => Promise<BrowserActionResult[]>
   enhanceMessageWithActions: (message: string) => Promise<string>
   executeWorkflow: (goal: string) => Promise<string>
-  
+
+  // Agentic workflow actions
+  startWorkflow: (goal: string) => Promise<void>
+  executeWorkflowStep: () => Promise<void>
+  cancelWorkflow: () => void
+  setWorkflowEnabled: (enabled: boolean) => void
+
   // Domain-specific chat actions
   switchToDomain: (domain: string, url: string, pageType?: 'html' | 'pdf' | 'image' | 'video' | 'unknown') => void
   getCurrentDomainChat: () => DomainChat | null
@@ -70,6 +105,401 @@ interface AIState {
   getAllDomainChats: () => DomainChat[]
   detectPageType: (url: string) => 'html' | 'pdf' | 'image' | 'video' | 'unknown'
   addMcpServer: (url: string) => void;
+}
+
+// Helper function to parse workflow steps from text when JSON parsing fails
+function parseWorkflowFromText(text: string, goal: string): any[] {
+  const steps: any[] = []
+  const lines = text.split('\n').filter(line => line.trim().length > 0)
+
+  console.log('🔍 Parsing text lines:', lines.length)
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    const lowerLine = line.toLowerCase()
+
+    // Skip empty lines or comments
+    if (!line || line.startsWith('//') || line.startsWith('#')) continue
+
+    console.log(`📝 Processing line: "${line}"`)
+
+    // Look for navigation patterns
+    if (lowerLine.includes('navigate') || lowerLine.includes('go to') || lowerLine.includes('visit') || lowerLine.includes('open')) {
+      const urlMatch = line.match(/https?:\/\/[^\s<>"{}()\[\]]+/i)
+      if (urlMatch) {
+        steps.push({
+          action: 'navigate',
+          target: urlMatch[0],
+          description: `Navigate to ${urlMatch[0]}`,
+          parameters: {},
+          expectedResult: 'Page loads successfully'
+        })
+        console.log('✅ Added navigation step')
+      }
+    }
+
+    // Look for search patterns
+    if (lowerLine.includes('search') && !lowerLine.includes('navigate')) {
+      const searchMatch = line.match(/(?:search for|find)\s+(.+?)(?:\s|$|[.,!])/i)
+      const query = searchMatch ? searchMatch[1].trim() : goal.replace(/find|search|buy|get/i, '').trim()
+      if (query && query.length > 2) {
+        steps.push({
+          action: 'search',
+          target: query,
+          description: `Search for "${query}"`,
+          parameters: { query },
+          expectedResult: 'Search results page loads'
+        })
+        console.log('✅ Added search step')
+      }
+    }
+
+    // Look for click patterns
+    if (lowerLine.includes('click') || lowerLine.includes('press') || lowerLine.includes('select') || lowerLine.includes('tap')) {
+      const elementMatch = line.match(/(?:click|press|select|tap)\s+(?:on\s+)?(.+?)(?:\s|$|[.,!])/i)
+      if (elementMatch) {
+        const element = elementMatch[1].trim()
+        // Skip if element contains malformed JSON fragments
+        if (!element.includes('field') && !element.includes('}') && !element.includes('{')) {
+          steps.push({
+            action: 'findAndClick',
+            target: element,
+            description: `Click on ${element}`,
+            parameters: { elementDescription: element },
+            expectedResult: 'Element clicked successfully'
+          })
+          console.log('✅ Added click step')
+        }
+      }
+    }
+
+    // Look for input patterns
+    if (lowerLine.includes('input') || lowerLine.includes('enter') || lowerLine.includes('type') || lowerLine.includes('fill')) {
+      const inputMatch = line.match(/(?:input|enter|type|fill)\s+(.+?)(?:\s|$|[.,!])/i)
+      if (inputMatch) {
+        const text = inputMatch[1].trim()
+        // Skip if text contains malformed JSON fragments
+        if (!text.includes('field') && !text.includes('}') && !text.includes('{') && text.length > 1) {
+          steps.push({
+            action: 'fillForm',
+            target: 'input field',
+            description: `Enter "${text}"`,
+            parameters: {
+              text,
+              selector: 'input[type="text"], input:not([type]), textarea, [contenteditable]'
+            },
+            expectedResult: 'Text entered successfully'
+          })
+          console.log('✅ Added input step')
+        }
+      }
+    }
+
+    // Look for scroll patterns
+    if (lowerLine.includes('scroll')) {
+      const direction = lowerLine.includes('up') ? 'up' : lowerLine.includes('top') ? 'top' : 'down'
+      steps.push({
+        action: 'scrollPage',
+        target: direction,
+        description: `Scroll ${direction}`,
+        parameters: { scrollDirection: direction },
+        expectedResult: 'Page scrolled successfully'
+      })
+      console.log('✅ Added scroll step')
+    }
+  }
+
+  console.log(`📋 Text parsing found ${steps.length} valid steps`)
+  return steps
+}
+
+// Helper function to create intelligent fallback workflows based on goal analysis
+function createIntelligentFallbackWorkflow(goal: string): any[] {
+  const lowerGoal = goal.toLowerCase()
+
+  // Enhanced flight search workflow with smart parameter extraction
+  if (lowerGoal.includes('flight') || lowerGoal.includes('ticket') || lowerGoal.includes('book')) {
+    // Extract flight details from the goal
+    const extractFlightDetails = (goal: string) => {
+      const lower = goal.toLowerCase()
+
+      // Extract cities using common patterns
+      const cityPattern = /(?:from\s+)?([A-Za-z\s]+?)(?:\s+to\s+)([A-Za-z\s]+?)(?:\s+on|\s+for|\s*$)/i
+      const cityMatch = goal.match(cityPattern)
+
+      // Extract dates
+      const datePattern = /(?:on\s+)?([A-Za-z]+\s+\d+|\d+\/\d+\/\d+|\d+-\d+-\d+)/i
+      const dateMatch = goal.match(datePattern)
+
+      // Extract passenger info
+      const passengerPattern = /(\d+)\s+(?:adult|person|passenger)/i
+      const passengerMatch = goal.match(passengerPattern)
+
+      // Determine trip type
+      const tripType = lower.includes('round trip') || lower.includes('return') ? 'round-trip' : 'one-way'
+
+      return {
+        from: cityMatch ? cityMatch[1].trim() : '',
+        to: cityMatch ? cityMatch[2].trim() : '',
+        date: dateMatch ? dateMatch[1].trim() : '',
+        passengers: passengerMatch ? parseInt(passengerMatch[1]) : 1,
+        tripType
+      }
+    }
+
+    const details = extractFlightDetails(goal)
+
+    console.log('✈️ Extracted flight details:', details)
+
+    return [
+      {
+        action: 'navigate',
+        target: 'https://www.google.com/flights',
+        description: 'Navigate to Google Flights for comprehensive flight search',
+        parameters: {},
+        expectedResult: 'Google Flights page loads successfully'
+      },
+      {
+        action: 'findAndClick',
+        target: 'departure city field',
+        description: 'Click on departure city input field',
+        parameters: { elementDescription: 'departure city input field or button' },
+        expectedResult: 'Departure field activated for input'
+      },
+      {
+        action: 'fillForm',
+        target: 'departure city',
+        description: `Enter ${details.from} as departure city`,
+        parameters: {
+          text: details.from,
+          selector: 'input[placeholder*="departure"], input[name*="from"], [data-testid*="departure"]'
+        },
+        expectedResult: `${details.from} entered successfully`
+      },
+      {
+        action: 'findAndClick',
+        target: 'destination city field',
+        description: 'Click on destination city input field',
+        parameters: { elementDescription: 'destination city input field or button' },
+        expectedResult: 'Destination field activated for input'
+      },
+      {
+        action: 'fillForm',
+        target: 'destination city',
+        description: `Enter ${details.to} as destination`,
+        parameters: {
+          text: details.to,
+          selector: 'input[placeholder*="destination"], input[name*="to"], [data-testid*="destination"]'
+        },
+        expectedResult: `${details.to} entered successfully`
+      },
+      ...(details.date ? [{
+        action: 'findAndClick',
+        target: 'date field',
+        description: 'Click on date selection field',
+        parameters: { elementDescription: 'departure date input field' },
+        expectedResult: 'Date field activated'
+      },
+      {
+        action: 'fillForm',
+        target: 'departure date',
+        description: `Enter ${details.date} as travel date`,
+        parameters: {
+          text: details.date,
+          selector: 'input[placeholder*="date"], input[name*="date"], [data-testid*="date"]'
+        },
+        expectedResult: `${details.date} entered successfully`
+      }] : []),
+      {
+        action: 'findAndClick',
+        target: 'search flights',
+        description: 'Click search button to find flights',
+        parameters: { elementDescription: 'search flights button or submit button' },
+        expectedResult: 'Flight search initiated successfully'
+      },
+      {
+        action: 'extractContent',
+        target: 'flight results',
+        description: 'Extract flight options and pricing information',
+        parameters: { selector: '.flight-result, .flight-card, [data-flight], .result' },
+        expectedResult: 'Flight information extracted successfully'
+      }
+    ].filter(step => step !== null)
+  }
+
+  // Hotel search workflow - improved with proper parameters
+  if (lowerGoal.includes('hotel') || lowerGoal.includes('stay') || lowerGoal.includes('accommodation')) {
+    return [
+      {
+        action: 'navigate',
+        target: 'https://www.booking.com',
+        description: 'Navigate to Booking.com for hotel search',
+        parameters: {},
+        expectedResult: 'Booking.com page loads successfully'
+      },
+      {
+        action: 'findAndClick',
+        target: 'search box',
+        description: 'Click on hotel search input field',
+        parameters: { elementDescription: 'hotel search input field or destination field' },
+        expectedResult: 'Search field activated for input'
+      },
+      {
+        action: 'fillForm',
+        target: 'hotel destination',
+        description: 'Enter hotel destination and dates',
+        parameters: {
+          text: 'Paris hotels',
+          selector: 'input[placeholder*="destination"], input[name*="destination"], #ss'
+        },
+        expectedResult: 'Hotel destination entered successfully'
+      },
+      {
+        action: 'findAndClick',
+        target: 'search hotels',
+        description: 'Click search button to find hotels',
+        parameters: { elementDescription: 'search hotels button or submit button' },
+        expectedResult: 'Hotel search initiated successfully'
+      },
+      {
+        action: 'extractContent',
+        target: 'hotel results',
+        description: 'Extract hotel options and pricing information',
+        parameters: { selector: '.hotel-card, .sr-hotel-card, [data-hotel], .result' },
+        expectedResult: 'Hotel information extracted successfully'
+      }
+    ]
+  }
+
+  // Product shopping workflow - improved with proper parameters
+  if (lowerGoal.includes('buy') || lowerGoal.includes('purchase') || lowerGoal.includes('price')) {
+    return [
+      {
+        action: 'navigate',
+        target: 'https://www.amazon.com',
+        description: 'Navigate to Amazon for product search',
+        parameters: {},
+        expectedResult: 'Amazon page loads successfully'
+      },
+      {
+        action: 'findAndClick',
+        target: 'search box',
+        description: 'Click on Amazon search input field',
+        parameters: { elementDescription: 'Amazon search box or input field' },
+        expectedResult: 'Search field activated for input'
+      },
+      {
+        action: 'fillForm',
+        target: 'product search',
+        description: 'Enter product search terms',
+        parameters: {
+          text: goal.replace(/buy|purchase|price/gi, '').trim(),
+          selector: 'input[placeholder*="search"], #twotabsearchtextbox'
+        },
+        expectedResult: 'Product search terms entered successfully'
+      },
+      {
+        action: 'findAndClick',
+        target: 'search button',
+        description: 'Click Amazon search button',
+        parameters: { elementDescription: 'Amazon search button or submit button' },
+        expectedResult: 'Product search initiated successfully'
+      },
+      {
+        action: 'extractContent',
+        target: 'product results',
+        description: 'Extract product information and pricing',
+        parameters: { selector: '.s-result-item, .product-card, [data-product], .result' },
+        expectedResult: 'Product information extracted successfully'
+      }
+    ]
+  }
+
+  // Research workflow - improved with proper parameters
+  if (lowerGoal.includes('research') || lowerGoal.includes('study') || lowerGoal.includes('learn')) {
+    return [
+      {
+        action: 'navigate',
+        target: 'https://www.google.com',
+        description: 'Navigate to Google for research',
+        parameters: {},
+        expectedResult: 'Google page loads successfully'
+      },
+      {
+        action: 'findAndClick',
+        target: 'search box',
+        description: 'Click on Google search input field',
+        parameters: { elementDescription: 'Google search box or input field' },
+        expectedResult: 'Search field activated for input'
+      },
+      {
+        action: 'fillForm',
+        target: 'research query',
+        description: 'Enter research query',
+        parameters: {
+          text: goal,
+          selector: 'input[name="q"], [data-testid*="search"]'
+        },
+        expectedResult: 'Research query entered successfully'
+      },
+      {
+        action: 'findAndClick',
+        target: 'search button',
+        description: 'Click Google search button',
+        parameters: { elementDescription: 'Google search button or submit button' },
+        expectedResult: 'Research search initiated successfully'
+      },
+      {
+        action: 'extractContent',
+        target: 'research results',
+        description: 'Extract key research information from results',
+        parameters: { selector: '.result, .g, article, .content' },
+        expectedResult: 'Research information extracted successfully'
+      }
+    ]
+  }
+
+  // Default intelligent workflow - improved with proper parameters
+  return [
+    {
+      action: 'navigate',
+      target: 'https://www.google.com',
+      description: 'Navigate to Google for comprehensive search',
+      parameters: {},
+      expectedResult: 'Google page loads successfully'
+    },
+    {
+      action: 'findAndClick',
+      target: 'search box',
+      description: 'Click on Google search input field',
+      parameters: { elementDescription: 'Google search box or input field' },
+      expectedResult: 'Search field activated for input'
+    },
+    {
+      action: 'fillForm',
+      target: 'search query',
+      description: 'Enter search query',
+      parameters: {
+        text: goal,
+        selector: 'input[name="q"], [data-testid*="search"]'
+      },
+      expectedResult: 'Search query entered successfully'
+    },
+    {
+      action: 'findAndClick',
+      target: 'search button',
+      description: 'Click Google search button',
+      parameters: { elementDescription: 'Google search button or submit button' },
+      expectedResult: 'Search initiated successfully'
+    },
+    {
+      action: 'extractContent',
+      target: 'search results',
+      description: 'Extract relevant information from search results',
+      parameters: { selector: '.result, .g, .content, article' },
+      expectedResult: 'Search results extracted successfully'
+    }
+  ]
 }
 
 const defaultProviders: AIProvider[] = [
@@ -105,6 +535,10 @@ export const useAIStore = create<AIState>()(
       streamingMessageId: null,
       browserControlEnabled: true,
       mcpServers: [],
+
+      // Agentic workflow state
+      currentWorkflow: null,
+      workflowEnabled: true,
       
       addProvider: (provider) => {
         const newProvider = {
@@ -236,6 +670,771 @@ export const useAIStore = create<AIState>()(
         set({ browserControlEnabled: enabled })
       },
 
+      setWorkflowEnabled: (enabled: boolean) => {
+        set({ workflowEnabled: enabled })
+      },
+
+      // Agentic workflow implementation
+      startWorkflow: async (goal: string) => {
+        const { activeProvider, providers, workflowEnabled } = get()
+        const provider = providers.find(p => p.id === activeProvider)
+
+        if (!provider || !provider.apiKey || !workflowEnabled) {
+          throw new Error('No active AI provider configured or workflows disabled')
+        }
+
+        console.log('╔═══════════════════════════════════════════════════════')
+        console.log('║ 🚀 STARTING AGENTIC WORKFLOW')
+        console.log('╠═══════════════════════════════════════════════════════')
+        console.log('║ Goal:', goal)
+        console.log('║ Provider:', provider.id)
+        console.log('║ Model:', provider.selectedModel || provider.models[0])
+        console.log('║ Workflow Enabled:', workflowEnabled)
+        console.log('╚═══════════════════════════════════════════════════════')
+
+        // Enhanced workflow planning with specific detail extraction
+        const planningPrompt = `Create a detailed browser automation workflow for this complex task: "${goal}"
+
+First, extract key details from the request:
+- For flights: departure city, destination, dates, passengers, trip type (one-way/round-trip)
+- For hotels: location, check-in/out dates, guests, preferences
+- For shopping: product type, budget, preferences, quantity
+
+Then create a JSON array of specific, actionable steps:
+
+Available actions and their required parameters:
+- navigate: {"action": "navigate", "target": "https://url.com", "description": "...", "parameters": {}, "expectedResult": "..."}
+- search: {"action": "search", "target": "search query", "description": "...", "parameters": {"query": "query"}, "expectedResult": "..."}
+- findAndClick: {"action": "findAndClick", "target": "element", "description": "...", "parameters": {"elementDescription": "description"}, "expectedResult": "..."}
+- fillForm: {"action": "fillForm", "target": "field", "description": "...", "parameters": {"text": "text", "selector": "css selector"}, "expectedResult": "..."}
+- extractContent: {"action": "extractContent", "target": "content", "description": "...", "parameters": {"selector": "css selector"}, "expectedResult": "..."}
+
+FLIGHT BOOKING WORKFLOW EXAMPLE:
+For "find me the cheapest flight from Prague to Paris on September 1st, one way, one adult":
+[
+  {
+    "action": "navigate",
+    "target": "https://www.google.com/flights",
+    "description": "Navigate to Google Flights for comprehensive search",
+    "parameters": {},
+    "expectedResult": "Flights search page loads successfully"
+  },
+  {
+    "action": "waitForElement",
+    "target": "departure city input",
+    "description": "Wait for departure city input field to be available",
+    "parameters": {"selector": "input[placeholder*='Where'], input[aria-label*='departure'], [data-testid*='departure']"},
+    "expectedResult": "Departure input field is ready for interaction"
+  },
+  {
+    "action": "findAndClick",
+    "target": "departure city field",
+    "description": "Click departure city input field",
+    "parameters": {"elementDescription": "departure city input field or button"},
+    "expectedResult": "Departure field activated for input"
+  },
+  {
+    "action": "fillForm",
+    "target": "departure city",
+    "description": "Enter Prague as departure city",
+    "parameters": {"text": "Prague", "selector": "input[placeholder*='Where'], input[aria-label*='departure'], [data-testid*='departure']"},
+    "expectedResult": "Prague entered successfully"
+  },
+  {
+    "action": "findAndClick",
+    "target": "destination city field",
+    "description": "Click destination city input field",
+    "parameters": {"elementDescription": "destination city input field or button"},
+    "expectedResult": "Destination field activated for input"
+  },
+  {
+    "action": "fillForm",
+    "target": "destination city",
+    "description": "Enter Paris as destination",
+    "parameters": {"text": "Paris", "selector": "input[placeholder*='Where'], input[aria-label*='destination'], [data-testid*='destination']"},
+    "expectedResult": "Paris entered successfully"
+  },
+  {
+    "action": "findAndClick",
+    "target": "departure date field",
+    "description": "Click departure date field",
+    "parameters": {"elementDescription": "departure date input or button"},
+    "expectedResult": "Date picker opens"
+  },
+  {
+    "action": "fillForm",
+    "target": "departure date",
+    "description": "Enter September 1st as departure date",
+    "parameters": {"text": "Sep 1", "selector": "input[type='date'], input[placeholder*='date'], [data-testid*='date']"},
+    "expectedResult": "September 1st selected"
+  },
+  {
+    "action": "findAndClick",
+    "target": "search flights button",
+    "description": "Click search button to find flights",
+    "parameters": {"elementDescription": "Search flights button or submit button"},
+    "expectedResult": "Flight search initiated"
+  },
+  {
+    "action": "extractContent",
+    "target": "search results",
+    "description": "Extract flight search results and pricing",
+    "parameters": {"selector": ".flight-results, .search-results, [data-testid*='results']"},
+    "expectedResult": "Flight results extracted successfully"
+  }
+]
+
+IMPORTANT: For modern web apps like Google Flights, Kayak, Expedia:
+- Always include waitForElement steps after navigation to ensure page loads
+- Use specific selectors like [data-testid], [aria-label], input[placeholder*='...']
+- Add delays between interactions to let the page respond
+- For complex forms, break down into smaller, focused steps
+
+Return ONLY the JSON array with all required parameters filled in for: ${goal}`
+
+        try {
+          const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${provider.apiKey}`,
+              'Content-Type': 'application/json',
+              ...(provider.id === 'openrouter' ? { 'HTTP-Referer': window.location.href } : {})
+            },
+            body: JSON.stringify({
+              model: provider.selectedModel || provider.models[0],
+              messages: [
+                { role: 'system', content: planningPrompt },
+                { role: 'user', content: `Create a step-by-step plan to: ${goal}` }
+              ],
+              temperature: 0.3, // Lower temperature for more structured planning
+              max_tokens: 100000 // Increased for comprehensive planning
+            })
+          })
+
+          if (response.status === 401) {
+            console.error(`401 Unauthorized - API key may be invalid or blocked for ${provider.name}`)
+            get().disconnectProvider(provider.id)
+            throw new Error('API key is invalid or blocked. Please check your API key or disconnect and reconnect with a new one.')
+          }
+
+          if (!response.ok) {
+            throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+          }
+
+          const data = await response.json()
+          const planText = data.choices?.[0]?.message?.content || ''
+
+          console.log('📋 Generated workflow plan:', planText)
+
+          // Parse the JSON plan with robust error handling
+          let steps: any[] = []
+
+          console.log('📋 Raw plan text:', planText)
+
+          // Strategy 1: Clean and parse JSON
+          try {
+            // Clean the text to remove markdown and extra content
+            let cleanText = planText.trim()
+
+            // Remove markdown code blocks if present
+            cleanText = cleanText.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '')
+
+            // Find and extract JSON array
+            const jsonMatch = cleanText.match(/\[[\s\S]*\]/)
+            if (jsonMatch) {
+              const jsonString = jsonMatch[0]
+              console.log('🔍 Extracted JSON string:', jsonString)
+
+              steps = JSON.parse(jsonString)
+              if (Array.isArray(steps) && steps.length > 0) {
+                console.log('✅ Successfully parsed', steps.length, 'workflow steps')
+
+                // Validate and clean steps
+                const validSteps = steps.filter(step =>
+                  step && typeof step === 'object' &&
+                  step.action && step.description &&
+                  typeof step.parameters === 'object'
+                ).map(step => ({
+                  action: step.action,
+                  target: step.target || '',
+                  description: step.description || `Step with ${step.action}`,
+                  parameters: step.parameters || {},
+                  expectedResult: step.expectedResult || 'Step completed'
+                }))
+
+                if (validSteps.length > 0) {
+                  console.log('✅ Valid workflow steps:', validSteps.length)
+                  steps = validSteps
+                } else {
+                  console.log('❌ No valid steps found in JSON')
+                  steps = []
+                }
+              }
+            }
+          } catch (parseError) {
+            console.log('❌ JSON parsing failed:', parseError instanceof Error ? parseError.message : String(parseError))
+            steps = []
+          }
+
+          // Strategy 2: Text parsing fallback
+          if (!steps || steps.length === 0) {
+            console.log('🔄 No valid JSON found, attempting text parsing...')
+            steps = parseWorkflowFromText(planText, goal)
+          }
+
+          // Strategy 3: Intelligent fallback
+          if (!steps || steps.length === 0) {
+            console.log('🎯 Creating intelligent fallback workflow...')
+            steps = createIntelligentFallbackWorkflow(goal)
+          }
+
+          // Ensure we have at least one step
+          if (!steps || steps.length === 0) {
+            steps = [{
+              action: 'search',
+              target: goal,
+              description: `Search for "${goal}"`,
+              parameters: { query: goal },
+              expectedResult: 'Search results page loads'
+            }]
+          }
+
+          console.log('╔═══════════════════════════════════════════════════════')
+          console.log('║ 📋 WORKFLOW PLAN CREATED')
+          console.log('╠═══════════════════════════════════════════════════════')
+          console.log('║ Total Steps:', steps.length)
+          console.log('╚═══════════════════════════════════════════════════════')
+          
+          steps.forEach((step, index) => {
+            console.log(`\nStep ${index + 1}: ${step.description}`)
+            console.log(`  Action: ${step.action}`)
+            console.log(`  Target: ${step.target}`)
+            if (step.parameters) {
+              console.log(`  Parameters:`, step.parameters)
+            }
+          })
+
+          // Validate and create workflow steps with proper parameters
+          const validateStepParameters = (step: any): boolean => {
+            const requiredParams: Record<string, string[]> = {
+              'navigate': ['target'], // URL is required
+              'search': ['query'], // Search query is required
+              'findAndClick': ['elementDescription'], // Element description is required
+              'fillForm': ['text'], // Text is required, selector is optional
+              'scrollPage': [], // No required params, has defaults
+              'extractContent': [], // No required params
+              'newTab': [], // URL optional, defaults to about:blank
+              'closeTab': [], // tabId optional, uses current tab
+              'switchTab': ['tabId'], // tabId is required
+              'goBack': [], // No params needed
+              'goForward': [], // No params needed
+              'reload': [], // No params needed
+              'clickElement': ['selector'], // Selector is required
+              'waitForElement': ['selector'], // Selector is required
+              'screenshot': [], // Optional description
+              'analyzeContent': [], // No params needed
+              'smartFillForm': [], // Optional parameters
+              'extractTable': [], // Optional selector
+              'waitAndExtract': [] // No params needed
+            }
+
+            const actionType = step.action
+            const params = step.parameters || {}
+            const target = step.target
+
+            // Check if action type is supported
+            if (!requiredParams[actionType]) {
+              console.error(`Unsupported action type: ${actionType}`)
+              return false
+            }
+
+            // Check required parameters
+            const required = requiredParams[actionType]
+            for (const param of required) {
+              if (param === 'target' && !target) {
+                console.error(`Missing required target for ${actionType}`)
+                return false
+              }
+              if (param !== 'target' && !params[param]) {
+                console.error(`Missing required parameter '${param}' for ${actionType}`)
+                return false
+              }
+            }
+
+            // Special validation for URLs
+            if (actionType === 'navigate' && target) {
+              if (!target.startsWith('http://') && !target.startsWith('https://')) {
+                console.error(`Invalid URL format: ${target}`)
+                return false
+              }
+            }
+
+            return true
+          }
+
+          // Filter and validate steps
+          console.log('\n🔍 Validating workflow steps...')
+          const validSteps = steps.filter((step, index) => {
+            const isValid = validateStepParameters(step)
+            if (!isValid) {
+              console.log(`❌ Step ${index + 1} INVALID: ${step.description}`)
+              console.log(`   Action: ${step.action}`)
+              console.log(`   Parameters:`, step.parameters || 'none')
+            } else {
+              console.log(`✅ Step ${index + 1} VALID: ${step.description}`)
+            }
+            return isValid
+          })
+
+          if (validSteps.length === 0) {
+            console.log('💥 FATAL: No valid workflow steps could be created!')
+            throw new Error('No valid workflow steps could be created. All steps are missing required parameters.')
+          }
+
+          if (validSteps.length < steps.length) {
+            console.log(`⚠️ WARNING: Filtered out ${steps.length - validSteps.length} invalid steps`)
+          }
+
+          // Create workflow steps with proper BrowserAction format
+          const workflowSteps: WorkflowStep[] = validSteps.map((step, index) => {
+            // Map workflow action to BrowserAction format
+            const browserAction: BrowserAction = {
+              type: step.action as any,
+              ...(step.target && step.action === 'navigate' ? { url: step.target } : {}),
+              ...(step.parameters?.query ? { query: step.parameters.query } : {}),
+              ...(step.parameters?.elementDescription ? { elementDescription: step.parameters.elementDescription } : {}),
+              ...(step.parameters?.text ? { text: step.parameters.text } : {}),
+              ...(step.parameters?.selector ? { selector: step.parameters.selector } : {}),
+              ...(step.parameters?.scrollDirection ? { scrollDirection: step.parameters.scrollDirection } : {}),
+              ...(step.parameters?.tabId ? { tabId: step.parameters.tabId } : {}),
+              ...(step.parameters?.formData ? { formData: step.parameters.formData } : {})
+            }
+            
+            console.log(`📝 Created browser action for step ${index + 1}:`, browserAction)
+            
+            return {
+              id: crypto.randomUUID(),
+              description: step.description || `Step ${index + 1}`,
+              action: browserAction,
+              status: 'pending',
+              timestamp: new Date()
+            }
+          })
+
+          const workflow: AgenticWorkflow = {
+            id: crypto.randomUUID(),
+            goal,
+            steps: workflowSteps,
+            currentStep: 0,
+            status: 'executing',
+            results: [],
+            startTime: new Date()
+          }
+
+          set({ currentWorkflow: workflow })
+          
+          console.log('\n╔═══════════════════════════════════════════════════════')
+          console.log('║ 🎯 WORKFLOW READY FOR EXECUTION')
+          console.log('╠═══════════════════════════════════════════════════════')
+          console.log('║ Workflow ID:', workflow.id)
+          console.log('║ Total Steps:', workflowSteps.length)
+          console.log('║ Status:', workflow.status)
+          console.log('╚═══════════════════════════════════════════════════════')
+          
+          console.log('\n📋 EXECUTION PLAN:')
+          workflowSteps.forEach((step, index) => {
+            console.log(`${index + 1}. ${step.description} [${step.action.type}]`)
+          })
+
+          // Auto-execute first step after a small delay to ensure UI updates
+          console.log('⚡ Starting workflow execution...')
+          setTimeout(async () => {
+            try {
+              await get().executeWorkflowStep()
+            } catch (execError) {
+              console.error('❌ Failed to execute first workflow step:', execError)
+              // Update workflow status to failed
+              set((state) => ({
+                ...state,
+                currentWorkflow: state.currentWorkflow ? {
+                  ...state.currentWorkflow,
+                  status: 'failed',
+                  endTime: new Date()
+                } : null
+              }))
+            }
+          }, 500)
+
+        } catch (error) {
+          console.error('❌ Failed to create workflow:', error)
+          // Update workflow status to failed
+          set({ currentWorkflow: null })
+          throw error
+        }
+      },
+
+      executeWorkflowStep: async () => {
+        const { currentWorkflow } = get()
+        console.log('🔍 Checking workflow execution:', {
+          hasWorkflow: !!currentWorkflow,
+          status: currentWorkflow?.status,
+          currentStep: currentWorkflow?.currentStep,
+          totalSteps: currentWorkflow?.steps.length
+        })
+
+        if (!currentWorkflow || currentWorkflow.status !== 'executing') {
+          console.log('❌ Workflow not ready for execution')
+          return
+        }
+
+        const currentStep = currentWorkflow.steps[currentWorkflow.currentStep]
+        const stepNumber = currentWorkflow.currentStep + 1
+        
+        console.log('═══════════════════════════════════════════════════════')
+        console.log(`📍 WORKFLOW STEP ${stepNumber}/${currentWorkflow.steps.length}`)
+        console.log('═══════════════════════════════════════════════════════')
+        console.log('📋 Step Details:', {
+          number: stepNumber,
+          description: currentStep.description,
+          action: currentStep.action.type,
+          status: currentStep.status,
+          parameters: currentStep.action
+        })
+        console.log('═══════════════════════════════════════════════════════')
+        
+        if (!currentStep || currentStep.status !== 'pending') {
+          console.log('❌ Current step not ready for execution')
+          return
+        }
+
+        console.log(`⚡ STARTING EXECUTION: Step ${stepNumber} - ${currentStep.description}`)
+
+        // Mark step as executing
+        set((state) => {
+          if (state.currentWorkflow) {
+            return {
+              ...state,
+              currentWorkflow: {
+                ...state.currentWorkflow,
+                steps: state.currentWorkflow.steps.map((step, index) =>
+                  index === currentWorkflow.currentStep
+                    ? { ...step, status: 'executing' as const }
+                    : step
+                )
+              }
+            }
+          }
+          return state
+        })
+
+        try {
+          console.log('┌─────────────────────────────────────────────────────')
+          console.log(`│ 🔧 EXECUTING ACTION: ${currentStep.action.type}`)
+          console.log('├─────────────────────────────────────────────────────')
+          console.log('│ Action Parameters:', JSON.stringify(currentStep.action, null, 2))
+          console.log('└─────────────────────────────────────────────────────')
+
+          // For findAndClick and fillForm actions, enhance with page context
+          let enhancedAction = currentStep.action
+
+          if (currentStep.action.type === 'findAndClick' || currentStep.action.type === 'fillForm') {
+            console.log('🔍 Enhancing action with page context...')
+
+            // Extract page elements for intelligent decision making
+            const pageElements = await useBrowserStore.getState().getPageElements()
+            console.log('🔍 Page elements extracted:', pageElements.length, 'characters')
+
+            // For findAndClick, find the best element selector
+            if (currentStep.action.type === 'findAndClick') {
+              const elementDescription = currentStep.action.elementDescription
+              console.log('🎯 Finding element:', elementDescription)
+
+              // Use AI to find the best selector based on page elements
+              const { activeProvider, providers } = get()
+              const provider = providers.find(p => p.id === activeProvider)
+
+              if (provider && provider.apiKey && pageElements.length > 100) {
+                const selectorPrompt = `Given this page elements analysis, find the best CSS selector or element description for: "${elementDescription}"
+
+PAGE ELEMENTS:
+${pageElements}
+
+Return only a JSON object with the best selector strategy:
+{
+  "selector": "CSS selector or element description",
+  "strategy": "css|text|id|class|attribute",
+  "confidence": "high|medium|low",
+  "reasoning": "brief explanation"
+}`
+
+                try {
+                  const selectorResponse = await fetch(`${provider.baseUrl}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${provider.apiKey}`,
+                      'Content-Type': 'application/json',
+                      ...(provider.id === 'openrouter' ? { 'HTTP-Referer': window.location.href } : {})
+                    },
+                    body: JSON.stringify({
+                      model: provider.selectedModel || provider.models[0],
+                      messages: [{ role: 'user', content: selectorPrompt }],
+                      temperature: 0.1,
+                      max_tokens: 500
+                    })
+                  })
+
+                  if (selectorResponse.ok) {
+                    const selectorData = await selectorResponse.json()
+                    const selectorResult = JSON.parse(selectorData.choices?.[0]?.message?.content || '{}')
+
+                    if (selectorResult.selector) {
+                      console.log('🎯 AI-suggested selector:', selectorResult)
+                      enhancedAction = {
+                        ...currentStep.action,
+                        elementDescription: selectorResult.selector
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.log('❌ Selector enhancement failed, using original:', error)
+                }
+              }
+            }
+
+            // For fillForm, find the best input selector
+            else if (currentStep.action.type === 'fillForm') {
+              const text = currentStep.action.text
+              const selector = currentStep.action.selector
+              console.log('⌨️ Enhancing input action for:', text)
+
+              // Use page context to find better selector if current one is generic
+              if (selector && (selector.includes('*') || selector.includes('[type="text"]'))) {
+                const { activeProvider, providers } = get()
+                const provider = providers.find(p => p.id === activeProvider)
+
+                if (provider && provider.apiKey && pageElements.length > 100) {
+                  const inputPrompt = `Given this page elements analysis, find the best input field selector for entering: "${text}"
+
+PAGE ELEMENTS:
+${pageElements}
+
+Common input field patterns to look for:
+- Departure/destination city fields for flights
+- Origin/destination fields for travel
+- Name, email, phone fields for forms
+- Search input fields
+- Quantity or amount fields
+
+Return only a JSON object with the best input selector:
+{
+  "selector": "CSS selector for the input field",
+  "strategy": "specific|placeholder|id|name|class",
+  "confidence": "high|medium|low",
+  "reasoning": "brief explanation"
+}`
+
+                  try {
+                    const inputResponse = await fetch(`${provider.baseUrl}/chat/completions`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${provider.apiKey}`,
+                        'Content-Type': 'application/json',
+                        ...(provider.id === 'openrouter' ? { 'HTTP-Referer': window.location.href } : {})
+                      },
+                      body: JSON.stringify({
+                        model: provider.selectedModel || provider.models[0],
+                        messages: [{ role: 'user', content: inputPrompt }],
+                        temperature: 0.1,
+                        max_tokens: 500
+                      })
+                    })
+
+                    if (inputResponse.ok) {
+                      const inputData = await inputResponse.json()
+                      const inputResult = JSON.parse(inputData.choices?.[0]?.message?.content || '{}')
+
+                      if (inputResult.selector) {
+                        console.log('⌨️ AI-suggested input selector:', inputResult)
+                        enhancedAction = {
+                          ...currentStep.action,
+                          selector: inputResult.selector
+                        }
+                      }
+                    }
+                  } catch (error) {
+                    console.log('❌ Input selector enhancement failed, using original:', error)
+                  }
+                }
+              }
+            }
+          }
+
+          // Execute the enhanced browser action
+          console.log('🎬 About to execute browser action...')
+          console.log('📦 Enhanced action:', JSON.stringify(enhancedAction, null, 2))
+          
+          const result = await get().executeBrowserActions([enhancedAction])
+          const actionResult = result[0]
+          
+          console.log('🏁 Browser action execution returned:', actionResult)
+
+          // If this was a navigation action, wait for page to load and elements to be available
+          if (enhancedAction.type === 'navigate' && actionResult.success) {
+            console.log('⏳ Navigation completed, waiting for page elements to load...')
+
+            // Wait for page to be ready and extract elements
+            await new Promise(resolve => setTimeout(resolve, 3000)) // Wait 3 seconds for SPA to load
+
+            // Try to extract page elements to confirm page is loaded
+            try {
+              const pageElements = await getBrowserStore().getPageElements()
+              console.log('📄 Page loaded successfully, elements extracted:', pageElements.length, 'characters')
+
+              // If we got meaningful page content, the page is likely loaded
+              if (pageElements.length > 200 && !pageElements.includes('Error extracting')) {
+                console.log('✅ Page elements detected, proceeding with workflow')
+              } else {
+                console.log('⚠️ Limited page elements, but continuing workflow')
+              }
+            } catch (error) {
+              console.log('⚠️ Could not extract page elements, but continuing workflow:', error)
+            }
+          }
+
+          // For findAndClick and fillForm actions, add small delay to let UI update
+          if (enhancedAction.type === 'findAndClick' || enhancedAction.type === 'fillForm' || enhancedAction.type === 'clickElement') {
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
+
+          console.log('┌─────────────────────────────────────────────────────')
+          if (actionResult.success) {
+            console.log(`│ ✅ STEP ${stepNumber} COMPLETED SUCCESSFULLY`)
+          } else {
+            console.log(`│ ❌ STEP ${stepNumber} FAILED`)
+          }
+          console.log('├─────────────────────────────────────────────────────')
+          console.log('│ Result:', actionResult.message)
+          if (actionResult.data) {
+            console.log('│ Data:', JSON.stringify(actionResult.data, null, 2))
+          }
+          console.log('└─────────────────────────────────────────────────────')
+
+          // Update step with result
+          set((state) => {
+            if (state.currentWorkflow) {
+              const updatedSteps = state.currentWorkflow.steps.map((step, index) =>
+                index === currentWorkflow.currentStep
+                  ? {
+                      ...step,
+                      status: actionResult.success ? 'completed' as const : 'failed' as const,
+                      result: actionResult
+                    }
+                  : step
+              )
+
+              let newCurrentStep = state.currentWorkflow.currentStep
+              let newStatus = state.currentWorkflow.status
+
+              // Move to next step or complete workflow
+              if (actionResult.success && currentWorkflow.currentStep < currentWorkflow.steps.length - 1) {
+                newCurrentStep++
+              } else {
+                newStatus = actionResult.success ? 'completed' : 'failed'
+              }
+
+              return {
+                ...state,
+                currentWorkflow: {
+                  ...state.currentWorkflow,
+                  steps: updatedSteps,
+                  currentStep: newCurrentStep,
+                  status: newStatus,
+                  results: [...state.currentWorkflow.results, actionResult],
+                  endTime: newStatus !== 'executing' ? new Date() : undefined
+                }
+              }
+            }
+            return state
+          })
+
+          console.log(`✅ Step ${currentWorkflow.currentStep + 1} ${actionResult.success ? 'completed' : 'failed'}:`, actionResult.message)
+
+          // Auto-execute next step if successful and more steps remain
+          const updatedWorkflow = get().currentWorkflow
+          console.log('🔄 Checking for next step:', {
+            hasWorkflow: !!updatedWorkflow,
+            status: updatedWorkflow?.status,
+            currentStep: updatedWorkflow?.currentStep,
+            totalSteps: updatedWorkflow?.steps.length,
+            shouldContinue: updatedWorkflow?.status === 'executing' && 
+                          updatedWorkflow?.currentStep < updatedWorkflow?.steps.length
+          })
+          
+          if (updatedWorkflow &&
+              updatedWorkflow.status === 'executing' &&
+              updatedWorkflow.currentStep < updatedWorkflow.steps.length) {
+            console.log('⏭️ Scheduling next step execution in 1 second...')
+            setTimeout(() => {
+              console.log('🚀 Executing next workflow step...')
+              get().executeWorkflowStep()
+            }, 1000) // Small delay between steps
+          } else {
+            console.log('✅ Workflow completed or stopped')
+          }
+
+        } catch (error) {
+          console.log('╔═══════════════════════════════════════════════════════')
+          console.log(`║ 💥 CRITICAL ERROR AT STEP ${stepNumber}`)
+          console.log('╠═══════════════════════════════════════════════════════')
+          console.log('║ Step:', currentStep.description)
+          console.log('║ Action:', currentStep.action.type)
+          console.log('║ Error:', error)
+          console.log('║ Error Message:', error instanceof Error ? error.message : String(error))
+          console.log('║ Stack:', error instanceof Error ? error.stack : 'No stack trace')
+          console.log('╚═══════════════════════════════════════════════════════')
+          console.error('Full error object:', error)
+
+          // Mark step as failed
+          set((state) => {
+            if (state.currentWorkflow) {
+              const updatedSteps = state.currentWorkflow.steps.map((step, index) =>
+                index === currentWorkflow.currentStep
+                  ? { ...step, status: 'failed' as const }
+                  : step
+              )
+
+              return {
+                ...state,
+                currentWorkflow: {
+                  ...state.currentWorkflow,
+                  steps: updatedSteps,
+                  status: 'failed',
+                  endTime: new Date()
+                }
+              }
+            }
+            return state
+          })
+        }
+      },
+
+      cancelWorkflow: () => {
+        set((state) => {
+          if (state.currentWorkflow) {
+            return {
+              ...state,
+              currentWorkflow: {
+                ...state.currentWorkflow,
+                status: 'failed',
+                endTime: new Date()
+              }
+            }
+          }
+          return state
+        })
+        console.log('🛑 Workflow cancelled')
+      },
+
       parseBrowserActions: async (message: string) => {
         if (!get().browserControlEnabled) return []
 
@@ -250,56 +1449,36 @@ export const useAIStore = create<AIState>()(
         }
 
         try {
-          const systemPrompt = `You are a browser action parser that analyzes user messages to detect browser control commands.
+          const systemPrompt = `You are a browser action parser. Your job is to analyze user messages and return browser actions as JSON.
 
-IMPORTANT: Distinguish between QUESTIONS about the current page and COMMANDS to perform actions.
+CRITICAL RULES:
+1. If the user is ASKING ABOUT the current page content, return []
+2. If the user is GIVING A COMMAND to do something, return the appropriate action
+3. Always return a valid JSON array, never text explanations
 
-Questions about current page (return empty array []):
-- "what is this page about?"
-- "what does this site do?"
-- "explain this content"
-- "what is it about?"
-- "summarize this page"
+COMMAND PATTERNS (return actions):
+- "go to [site]" or "open [site]" or "visit [site]" → navigate
+- "search for [term]" or "find [term]" → search
+- "click [element]" or "press [element]" → findAndClick
+- "scroll [direction]" → scrollPage
+- "get [content]" → extractContent
+
+QUESTION PATTERNS (return []):
+- "what is this?"
+- "what does this do?"
+- "explain this"
 - "what am I looking at?"
-- Any question asking for information about the CURRENT page
+- "summarize this page"
 
-Commands that need actions (parse these):
-- "go to X" → navigate to X
-- "open X" → navigate to X  
-- "search for X" → web search for X
-- "find information about X" → web search for X
-- "click X" → click element X
-- "scroll down/up" → scroll page
-- "get all links" → extract links
+EXPLICIT EXAMPLES:
+- "open google.com" → [{"type": "navigate", "url": "google.com"}]
+- "go to seznam.cz" → [{"type": "navigate", "url": "seznam.cz"}]
+- "search for cats" → [{"type": "search", "query": "cats"}]
+- "click login button" → [{"type": "findAndClick", "elementDescription": "login button"}]
+- "what is this page?" → []
+- "explain this content" → []
 
-Available action types:
-- navigate: Go to a URL or website (requires a destination)
-- search: Search the web (requires a search term, NOT for current page questions)
-- findAndClick: Click on an element by description (for clicking buttons, links, etc.)
-- scrollPage: Scroll the page
-- extractContent: Extract specific content (links, images, etc.)
-
-RULES:
-1. If user is asking ABOUT the current page, return []
-2. Only parse actions that require CHANGING something or NAVIGATING elsewhere
-3. "What is X?" without specific site = question about current content, not search
-4. "Search for X" or "Find X online" = search action
-5. Single words like "youtube" = navigate action
-6. For ANY click command, use "findAndClick" with elementDescription
-
-Examples:
-- "what is it about?" → [] (question about current page)
-- "what does this site do?" → [] (question about current page)
-- "go to google.com" → [{"type": "navigate", "url": "google.com"}]
-- "search for weather" → [{"type": "search", "query": "weather"}]
-- "find recipes online" → [{"type": "search", "query": "recipes"}]
-- "click login" → [{"type": "findAndClick", "elementDescription": "login"}]
-- "click on the submit button" → [{"type": "findAndClick", "elementDescription": "submit button"}]
-- "click the search icon" → [{"type": "findAndClick", "elementDescription": "search icon"}]
-- "press the next button" → [{"type": "findAndClick", "elementDescription": "next button"}]
-- "tap on home" → [{"type": "findAndClick", "elementDescription": "home"}]
-
-Return ONLY a valid JSON array. Empty array [] for questions about current content.`
+Return ONLY JSON array, no other text.`
 
           const model = provider.selectedModel || provider.models[0]
           
@@ -331,19 +1510,71 @@ Return ONLY a valid JSON array. Empty array [] for questions about current conte
           
           console.log('AI parsing response:', aiResponse)
           
-          // Parse the JSON response
+          // Parse the JSON response with multiple fallback strategies
+          let actions: any[] = []
+
+          // Strategy 1: Direct JSON parsing
           try {
-            const jsonMatch = aiResponse.match(/\[[\s\S]*\]/)
+            const jsonMatch = aiResponse.match(/\[[\s\S]*?\]/)
             if (jsonMatch) {
-              const actions = JSON.parse(jsonMatch[0])
-              console.log('Parsed actions from AI:', actions)
-              return Array.isArray(actions) ? actions : []
-            } else {
-              console.log('No JSON array found in AI response')
+              actions = JSON.parse(jsonMatch[0])
+              if (Array.isArray(actions)) {
+                console.log('✅ Parsed actions from JSON:', actions)
+                return actions
+              }
             }
           } catch (parseError) {
-            console.error('Failed to parse AI response as JSON:', parseError, aiResponse)
+            console.log('JSON parsing failed, trying fallback strategies...')
           }
+
+          // Strategy 2: Pattern-based parsing for common commands
+          const lowerMessage = message.toLowerCase()
+          const cleanResponse = aiResponse.toLowerCase().trim()
+
+          // Check for navigation commands
+          if (lowerMessage.includes('open ') || lowerMessage.includes('go to ') || lowerMessage.includes('visit ')) {
+            const urlMatch = message.match(/(?:open|go to|visit)\s+([^\s]+)/i)
+            if (urlMatch && urlMatch[1]) {
+              let url = urlMatch[1]
+              // Add protocol if missing
+              if (!url.startsWith('http')) {
+                url = 'https://' + url
+              }
+              console.log('🔄 Fallback: Detected navigation command:', url)
+              return [{ type: 'navigate', url }]
+            }
+          }
+
+          // Check for search commands
+          if (lowerMessage.includes('search for ') || lowerMessage.includes('find ')) {
+            const searchMatch = message.match(/(?:search for|find)\s+(.+)/i)
+            if (searchMatch && searchMatch[1]) {
+              const query = searchMatch[1].trim()
+              console.log('🔄 Fallback: Detected search command:', query)
+              return [{ type: 'search', query }]
+            }
+          }
+
+          // Check for click commands
+          if (lowerMessage.includes('click ') || lowerMessage.includes('press ')) {
+            const clickMatch = message.match(/(?:click|press)\s+(.+)/i)
+            if (clickMatch && clickMatch[1]) {
+              const element = clickMatch[1].trim()
+              console.log('🔄 Fallback: Detected click command:', element)
+              return [{ type: 'findAndClick', elementDescription: element }]
+            }
+          }
+
+          // Strategy 3: Look for action keywords in the response itself
+          if (cleanResponse.includes('navigate') || cleanResponse.includes('search') || cleanResponse.includes('click')) {
+            console.log('🔄 Fallback: Found action keywords in response')
+            // Return empty array to avoid false positives
+            return []
+          }
+
+          console.log('❌ All parsing strategies failed, returning empty array')
+          console.log('Original message:', message)
+          console.log('AI response:', aiResponse)
         } catch (error) {
           console.error('Error in AI action parsing:', error)
         }
@@ -353,17 +1584,22 @@ Return ONLY a valid JSON array. Empty array [] for questions about current conte
       },
 
       executeBrowserActions: async (actions: BrowserAction[]) => {
+        console.log('🎯 Executing browser actions:', actions)
         const results: BrowserActionResult[] = []
-        
+
         // Import browser store dynamically to avoid circular dependency
         const { useBrowserStore } = await import('./browserStore')
         const { executeBrowserAction } = useBrowserStore.getState()
+        console.log('🔧 Browser store loaded, executing actions...')
 
         for (const action of actions) {
           try {
+            console.log('⚙️ Executing action:', action)
             const result = await executeBrowserAction(action)
+            console.log('✅ Action result:', result)
             results.push(result)
           } catch (error) {
+            console.error('❌ Action execution failed:', error)
             results.push({
               success: false,
               message: `Failed to execute ${action.type}: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -371,6 +1607,7 @@ Return ONLY a valid JSON array. Empty array [] for questions about current conte
           }
         }
 
+        console.log('🎯 Browser actions execution complete:', results)
         return results
       },
 
@@ -1042,7 +2279,10 @@ For long documents, content may be presented in summary form. Ask for specific s
         activeProvider: state.activeProvider,
         browserControlEnabled: state.browserControlEnabled,
         domainChats: state.domainChats,
-        currentDomain: state.currentDomain
+        currentDomain: state.currentDomain,
+        // Persist workflow state
+        currentWorkflow: state.currentWorkflow,
+        workflowEnabled: state.workflowEnabled
       }),
       migrate: (persistedState: any, version: number) => {
         // Force migration to use updated models

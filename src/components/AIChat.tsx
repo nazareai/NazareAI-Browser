@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Send, Settings, X, MessageCircle, Loader, Bot, User, Clock, Globe, ChevronDown, ChevronUp, Trash2, History, AlertCircle, CheckCircle, XCircle, FileText, Zap, File as FileIcon } from 'lucide-react'
+import { Send, Settings, X, Loader, Clock, Globe, CheckCircle, XCircle, FileText, Zap, File as FileIcon } from 'lucide-react'
 import { useAIStore } from '../stores/aiStore'
 import { useBrowserStore } from '../stores/browserStore'
-import APIKeyManager from './APIKeyManager'
 
 interface AIChatProps {
   onClose: () => void
@@ -16,12 +15,12 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
   const [showDomainHistory, setShowDomainHistory] = useState(false)
   const [forceUpdate, setForceUpdate] = useState(0)
   
-  const { 
-    isConnected, 
-    streamChat, 
-    activeProvider, 
-    providers, 
-    isLoading, 
+  const {
+    isConnected,
+    streamChat,
+    activeProvider,
+    providers,
+    isLoading,
     streamingMessageId,
     browserControlEnabled,
     setBrowserControlEnabled,
@@ -30,7 +29,13 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
     getAllDomainChats,
     detectPageType,
     clearDomainChat,
-    currentDomain
+    currentDomain,
+    // Workflow functionality
+    currentWorkflow,
+    workflowEnabled,
+    setWorkflowEnabled,
+    startWorkflow,
+    cancelWorkflow
   } = useAIStore()
   
   const { getCurrentPageContent, currentTab } = useBrowserStore()
@@ -74,16 +79,142 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
     e.preventDefault()
     if (!message.trim() || !isConnected || isLoading) return
 
-    console.log('🔵 Chat Submit:', { 
-      message: message.trim(), 
-      isPDF, 
-      currentTab: currentTab?.url, 
+    console.log('🔵 Chat Submit:', {
+      message: message.trim(),
+      isPDF,
+      currentTab: currentTab?.url,
       usePageContext,
-      currentDomain 
+      currentDomain
     })
 
-    let context = ''
+    // Simplified task complexity analysis - faster with keyword detection first
+    const analyzeTaskComplexity = async (msg: string): Promise<{ isComplex: boolean, reason: string }> => {
+      const lowerMsg = msg.toLowerCase()
+      
+      // Quick keyword check first for obvious complex tasks
+      const complexKeywords = [
+        'find me the cheapest', 'find cheapest', 'compare prices',
+        'book me', 'book a', 'plan a trip', 'organize',
+        'research and compare', 'search and analyze',
+        'find flights', 'find hotels', 'find deals'
+      ]
+      
+      // Check for complex keywords with additional indicators
+      for (const keyword of complexKeywords) {
+        if (lowerMsg.includes(keyword)) {
+          console.log('🚀 Fast-tracked as complex task:', keyword)
+          return { 
+            isComplex: true, 
+            reason: `Complex task detected: ${keyword}` 
+          }
+        }
+      }
+      
+      // Quick check for simple commands
+      const simplePatterns = [
+        /^(go to|open|visit)\s+\S+$/i,
+        /^search for\s+.{1,20}$/i,
+        /^what (is|are)\s+.{1,30}$/i,
+        /^show me\s+.{1,20}$/i
+      ]
+      
+      if (simplePatterns.some(pattern => pattern.test(msg.trim()))) {
+        console.log('⚡ Fast-tracked as simple command')
+        return { 
+          isComplex: false, 
+          reason: 'Simple navigation or search command' 
+        }
+      }
+      
+      // For ambiguous cases, use keyword-based detection
+      // Skip AI analysis to reduce latency
+      const isComplex = isComplexTask(msg)
+      return { 
+        isComplex, 
+        reason: isComplex ? 'Multi-step task detected' : 'Simple command detected' 
+      }
+    }
+
+    // Legacy keyword-based detection for fallback
+    const isComplexTask = (msg: string) => {
+      const lowerMsg = msg.toLowerCase()
+
+      // High-priority agentic keywords (require multi-step workflows)
+      const agenticKeywords = [
+        'find me the cheapest', 'book me', 'plan a trip', 'organize',
+        'schedule', 'prepare a report', 'create a plan', 'help me find',
+        'find and compare', 'search and analyze', 'research and summarize',
+        'find information about', 'gather data on', 'collect information about'
+      ]
+
+      // Medium-priority keywords (could benefit from workflows)
+      const mediumKeywords = [
+        'find deals', 'find tickets', 'find flights', 'find hotels',
+        'compare', 'research', 'analyze', 'get me information'
+      ]
+
+      // Check for high-priority keywords first
+      if (agenticKeywords.some(keyword => lowerMsg.includes(keyword))) {
+        console.log('🔥 Detected high-priority agentic task')
+        return true
+      }
+
+      // For medium-priority keywords, check for additional complexity indicators
+      if (mediumKeywords.some(keyword => lowerMsg.includes(keyword))) {
+        const complexityIndicators = [
+          'cheapest', 'best', 'top', 'most', 'quickest', 'easiest',
+          'and then', 'after that', 'finally', 'step by step',
+          'multiple', 'several', 'compare', 'versus', 'vs'
+        ]
+
+        if (complexityIndicators.some(indicator => lowerMsg.includes(indicator))) {
+          console.log('🔥 Detected complex task with medium-priority keyword')
+          return true
+        }
+
+        // For simple searches, don't trigger workflows
+        if (lowerMsg.split(' ').length <= 4 && !lowerMsg.includes('and')) {
+          console.log('🔍 Simple search detected, using regular chat')
+          return false
+        }
+      }
+
+      console.log('💬 Regular chat message detected')
+      return false
+    }
+
+    // Analyze task complexity (with visual feedback)
+    console.log('🤔 Analyzing task complexity...')
+    const taskAnalysis = await analyzeTaskComplexity(message.trim())
+    const shouldStartWorkflow = taskAnalysis.isComplex && workflowEnabled && browserControlEnabled
+
+    console.log('🔍 AI Workflow Analysis:', {
+      message: message.trim(),
+      isComplex: taskAnalysis.isComplex,
+      reason: taskAnalysis.reason,
+      workflowEnabled,
+      browserControlEnabled,
+      shouldStartWorkflow
+    })
     
+    // Show workflow status immediately if detected
+    if (shouldStartWorkflow) {
+      // Create a temporary workflow status to show user immediately
+      const tempWorkflow = {
+        id: crypto.randomUUID(),
+        goal: message.trim(),
+        steps: [],
+        currentStep: 0,
+        status: 'planning' as const,
+        results: [],
+        startTime: new Date()
+      }
+      useAIStore.setState({ currentWorkflow: tempWorkflow })
+      setForceUpdate(prev => prev + 1)
+    }
+
+    let context = ''
+
     // Get page context if enabled, there's a current tab, and not on about:blank
     if (usePageContext && currentTab?.url && currentTab.url !== 'about:blank' && currentDomain) {
       setIsLoadingContext(true)
@@ -104,14 +235,28 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
     try {
       const userMessage = message
       setMessage('')
-      console.log('🔵 Starting stream chat...', { userMessage, contextLength: context.length })
-      await streamChat(userMessage, context)
-      setForceUpdate(prev => prev + 1)
-      console.log('🔵 Stream chat completed')
+
+      if (shouldStartWorkflow) {
+        console.log('🚀 Starting agentic workflow:', userMessage)
+        try {
+          // Start workflow for complex tasks
+          await startWorkflow(userMessage)
+          setForceUpdate(prev => prev + 1)
+          console.log('🚀 Workflow started successfully')
+        } catch (error) {
+          console.error('❌ Workflow failed to start:', error)
+          alert(`Workflow failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
+      } else {
+        console.log('🔵 Starting regular chat:', { userMessage, contextLength: context.length })
+        await streamChat(userMessage, context)
+        setForceUpdate(prev => prev + 1)
+        console.log('🔵 Stream chat completed')
+      }
     } catch (error) {
-      console.error('❌ Chat error:', error)
+      console.error('❌ Chat/Workflow error:', error)
       // Show error to user
-      alert(`Chat error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -147,6 +292,8 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
       </div>
     )
   }
+
+
 
   const getCurrentDomainDisplay = () => {
     if (!currentDomain) {
@@ -193,7 +340,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
   const handleSummarizeYouTube = async () => {
     if (currentPageType === 'video') {
       const content = await getCurrentPageContent()
-      const summary = await streamChat(`Summarize this YouTube video transcript: ${content}`)
+      await streamChat(`Summarize this YouTube video transcript: ${content}`)
       // Display summary in chat
     }
   }
@@ -309,11 +456,80 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
               </span>
             </label>
             <p className="text-[10px] text-gray-500 ml-5">
-              {isPDF 
+              {isPDF
                 ? "Enhanced PDF support: content extraction, analysis, and navigation"
                 : "Let AI navigate pages, search, extract content, and control browser actions"
               }
             </p>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={workflowEnabled}
+                onChange={(e) => setWorkflowEnabled(e.target.checked)}
+                className="w-3.5 h-3.5 text-blue-600 rounded focus:ring-blue-500"
+              />
+              <span className="text-xs text-gray-700 flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5" />
+                <span>Enable agentic workflows</span>
+              </span>
+            </label>
+            <p className="text-[10px] text-gray-500 ml-5">
+              Allow AI to plan and execute complex multi-step tasks autonomously
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Workflow Status Panel - Shows for all workflow states */}
+      {currentWorkflow && (currentWorkflow.status === 'executing' || currentWorkflow.status === 'planning') && (
+        <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Loader className="w-3 h-3 animate-spin text-blue-600" />
+                <span className="text-xs font-medium text-gray-700">
+                  {currentWorkflow.status === 'planning' ? 'Planning Workflow...' : 'Workflow Active'}
+                </span>
+              </div>
+              <button
+                onClick={cancelWorkflow}
+                className="text-[10px] text-gray-500 hover:text-gray-700 px-2 py-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="text-[10px] text-gray-600">
+              <div className="truncate" title={currentWorkflow.goal}>
+                {currentWorkflow.goal}
+              </div>
+            </div>
+
+            {/* Progress bar or planning indicator */}
+            {currentWorkflow.status === 'planning' ? (
+              <div className="flex items-center gap-2">
+                <div className="text-[9px] text-gray-500 animate-pulse">
+                  🤔 Analyzing task and creating execution plan...
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-gray-200 rounded-full h-0.5">
+                  <div
+                    className="bg-blue-600 h-0.5 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${currentWorkflow.steps.length > 0 
+                        ? ((currentWorkflow.currentStep + 1) / currentWorkflow.steps.length) * 100 
+                        : 0}%`
+                    }}
+                  ></div>
+                </div>
+                <span className="text-[9px] text-gray-500">
+                  {currentWorkflow.currentStep + 1}/{currentWorkflow.steps.length || '?'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -452,27 +668,31 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder={
-              isConnected 
-                ? isLoadingContext 
-                  ? "Loading page context..." 
+              isConnected
+                ? isLoadingContext
+                  ? "Loading page context..."
                   : isLoading
                   ? "Waiting for response..."
+                  : currentWorkflow?.status === 'executing'
+                  ? "Workflow in progress..."
                   : isPDF
                   ? "Ask about this PDF..."
+                  : browserControlEnabled && workflowEnabled
+                  ? "Ask me anything, give commands, or start complex tasks..."
                   : browserControlEnabled
                   ? "Ask me anything or give me a command..."
                   : "Ask me anything..."
                 : "Configure AI provider first"
             }
-            disabled={!isConnected || isLoadingContext || isLoading}
+            disabled={!isConnected || isLoadingContext || isLoading || currentWorkflow?.status === 'executing'}
             className="flex-1 px-3 py-2 text-xs text-gray-800 placeholder-gray-500 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
           />
           <button
             type="submit"
-            disabled={!message.trim() || !isConnected || isLoadingContext || isLoading}
+            disabled={!message.trim() || !isConnected || isLoadingContext || isLoading || currentWorkflow?.status === 'executing'}
             className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-500 transition-colors"
           >
-            {isLoading ? (
+            {isLoading || currentWorkflow?.status === 'executing' ? (
               <Loader className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Send className="w-3.5 h-3.5" />
@@ -481,7 +701,10 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
         </div>
         {browserControlEnabled && !isPDF && (
           <div className="mt-2 text-[10px] text-gray-500">
-            <p>💡 Try: "go to google.com", "search for weather", "extract all links", "scroll down"</p>
+            <p>
+              💡 Try: "go to google.com", "search for weather", "extract all links", "scroll down"
+              {workflowEnabled && <span><br />🚀 Agentic: "find me the cheapest flights to Paris", "compare hotel prices", "research AI tools"</span>}
+            </p>
           </div>
         )}
         {isPDF && (

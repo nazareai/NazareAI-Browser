@@ -76,7 +76,10 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
         }
       }
 
-      window.electronAPI.onCloudflareChallenge(handleCloudflareChallenge)
+      // Cloudflare challenge handling - disabled for now
+      // if (window.electronAPI.onCloudflareChallenge) {
+      //   window.electronAPI.onCloudflareChallenge(handleCloudflareChallenge)
+      // }
 
       return () => {
         // Cleanup if needed
@@ -668,6 +671,7 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
       <webview
         ref={webviewRef}
         src={tab.url}
+        data-tab-id={tab.id}
         partition="persist:main"
         // @ts-ignore - webview attributes are strings in HTML
         allowpopups="true"
