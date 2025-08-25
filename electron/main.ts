@@ -190,11 +190,102 @@ class AIBrowser {
 
       // Handle webview navigation requests
       this.mainWindow.webContents.on('did-attach-webview', (event, webContents) => {
-        // Set proper user agent for the webview - this should be consistent with the session config
+        // Set proper user agent for the webview - make it appear exactly like Chrome
         const chromeVersion = process.versions.chrome
-        const userAgent = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`
+        const userAgent = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.0.0 Safari/537.36`
         webContents.setUserAgent(userAgent)
-        
+
+        // Override navigator properties to hide Electron context
+        webContents.executeJavaScript(`
+          (function() {
+            // Hide Electron-specific properties
+            delete window.navigator.__defineGetter__;
+            delete window.navigator.__defineSetter__;
+
+            // Override navigator to appear more like Chrome
+            Object.defineProperty(navigator, 'webdriver', {
+              get: () => undefined,
+            });
+
+            Object.defineProperty(navigator, 'languages', {
+              get: () => ['en-US', 'en', 'cs'],
+            });
+
+            // Override permissions API to prevent detection
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = function(parameters) {
+              return originalQuery.call(this, parameters).catch(() => {
+                return { state: 'granted' }; // Default to granted for anti-detection
+              });
+            };
+
+            // Override notification API
+            if ('Notification' in window) {
+              const originalRequestPermission = Notification.requestPermission;
+              Notification.requestPermission = function() {
+                return originalRequestPermission.apply(this, arguments).catch(() => 'granted');
+              };
+            }
+
+            console.log('Anti-detection measures applied');
+          })();
+        `).catch(err => console.log('Failed to apply anti-detection:', err))
+
+        // Add comprehensive headers to bypass anti-bot measures
+        webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, callback) => {
+          const headers = { ...details.requestHeaders }
+
+          // Essential browser headers
+          headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
+          headers['Accept-Language'] = 'en-US,en;q=0.9,cs;q=0.8'
+          headers['Accept-Encoding'] = 'gzip, deflate, br'
+          headers['Cache-Control'] = 'max-age=0'
+          headers['Upgrade-Insecure-Requests'] = '1'
+          headers['Sec-Fetch-Site'] = 'none'
+          headers['Sec-Fetch-Mode'] = 'navigate'
+          headers['Sec-Fetch-User'] = '?1'
+          headers['Sec-Fetch-Dest'] = 'document'
+          headers['DNT'] = '1'
+          headers['Sec-Ch-Ua-Mobile'] = '?0'
+          headers['Sec-Ch-Ua-Platform'] = '"macOS"'
+          headers['Sec-Ch-Ua'] = `"Chromium";v="${process.versions.chrome}", "Not(A:Brand";v="24", "Google Chrome";v="${process.versions.chrome}"`
+
+          // Add appropriate referer
+          if (!headers['Referer']) {
+            if (details.url.includes('seznam.cz')) {
+              headers['Referer'] = 'https://www.seznam.cz/'
+            } else if (details.url.includes('google.com')) {
+              headers['Referer'] = 'https://www.google.com/'
+            } else if (details.url.includes('facebook.com')) {
+              headers['Referer'] = 'https://www.facebook.com/'
+            }
+          }
+
+          // Add origin header for CORS
+          if (details.url.includes('://')) {
+            const url = new URL(details.url)
+            headers['Origin'] = `${url.protocol}//${url.host}`
+          }
+
+          callback({ requestHeaders: headers })
+        })
+
+        // Handle response headers to remove anti-bot measures
+        webContents.session.webRequest.onHeadersReceived({ urls: ['*://*/*'] }, (details, callback) => {
+          const responseHeaders = { ...details.responseHeaders }
+
+          // Remove or modify headers that might cause issues
+          delete responseHeaders['x-frame-options']
+          delete responseHeaders['content-security-policy']
+
+          // Add some headers that help with compatibility
+          responseHeaders['Access-Control-Allow-Origin'] = ['*']
+          responseHeaders['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, OPTIONS']
+          responseHeaders['Access-Control-Allow-Headers'] = ['*']
+
+          callback({ responseHeaders })
+        })
+
         // Set up cookie handling for Cloudflare - just log changes for debugging
         webContents.session.cookies.on('changed', (event, cookie, cause, removed) => {
           if (cookie.domain && (cookie.domain.includes('search.sh') || cookie.domain.includes('cloudflare') || cookie.name.includes('cf_'))) {
@@ -432,7 +523,10 @@ class AIBrowser {
             isAllowed = true
           }
 
-          console.log(`Permission ${permission} requested by ${requestingOrigin}: ${isAllowed ? 'ALLOWED' : 'DENIED'}`)
+          // Only log permission denials or important permissions
+          if (!isAllowed || ['media', 'camera', 'microphone', 'geolocation'].includes(permission)) {
+            console.log(`Permission ${permission} requested by ${requestingOrigin}: ${isAllowed ? 'ALLOWED' : 'DENIED'}`)
+          }
 
           // Respond immediately to prevent blocking
           callback(isAllowed)
@@ -681,15 +775,26 @@ class AIBrowser {
       } else {
         // Temporarily disable CSP completely for debugging
         delete responseHeaders['Content-Security-Policy']
-        console.log('CSP disabled for debugging - pages should load now')
+        // Also disable other security headers that might block requests
+        delete responseHeaders['X-Frame-Options']
+        delete responseHeaders['Referrer-Policy']
+        delete responseHeaders['Permissions-Policy']
+        console.log('All security headers disabled for debugging - pages should load now')
       }
 
-      // Add additional security headers
+      // Add minimal security headers for debugging (don't override if already disabled)
+      if (!responseHeaders['X-Frame-Options']) {
+        responseHeaders['X-Frame-Options'] = ['SAMEORIGIN']
+      }
+      if (!responseHeaders['Referrer-Policy']) {
+        responseHeaders['Referrer-Policy'] = ['strict-origin-when-cross-origin']
+      }
+      if (!responseHeaders['Permissions-Policy']) {
+        responseHeaders['Permissions-Policy'] = ['camera=(), microphone=(), geolocation=(), payment=()']
+      }
+
       responseHeaders['X-Content-Type-Options'] = ['nosniff']
-      responseHeaders['X-Frame-Options'] = ['SAMEORIGIN']
       responseHeaders['X-XSS-Protection'] = ['1; mode=block']
-      responseHeaders['Referrer-Policy'] = ['strict-origin-when-cross-origin']
-      responseHeaders['Permissions-Policy'] = ['camera=(), microphone=(), geolocation=(), payment=()']
       
       callback({ responseHeaders })
     })

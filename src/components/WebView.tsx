@@ -675,7 +675,7 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
         plugins="true"
         // @ts-ignore
         nodeintegration="false"
-        webpreferences="javascript=true,webgl=true,webSecurity=true,allowRunningInsecureContent=false,nodeIntegration=false,contextIsolation=true"
+        webpreferences="javascript=true,webgl=true,webSecurity=true,allowRunningInsecureContent=true,nodeIntegration=false,contextIsolation=true,experimentalFeatures=true,enableBlinkFeatures=CSSColorSchemeUARendering,backgroundThrottling=false"
         // @ts-ignore
         disablewebsecurity="false"
         // @ts-ignore
