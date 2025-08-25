@@ -77,13 +77,14 @@ const defaultProviders: AIProvider[] = [
     name: 'OpenRouter',
     isActive: false,
     models: [
-      'openai/chatgpt-4o-latest',
+      'openai/gpt-5-mini',
+      'openai/gpt-4o',
       'anthropic/claude-sonnet-4',
-      'anthropic/claude-3.5-sonnet',
+      'anthropic/claude-opus-4.1',
       'google/gemini-2.5-flash',
       'google/gemini-2.5-pro',
     ],
-    selectedModel: 'openai/chatgpt-4o-latest',
+    selectedModel: 'openai/gpt-5-mini',
     baseUrl: 'https://openrouter.ai/api/v1'
   }
 ]
