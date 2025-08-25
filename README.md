@@ -182,51 +182,112 @@ Built packages are saved to `build/` directory:
 | **⌘L** | Focus address bar |
 | **⌘⌥I** | Developer tools |
 
-## 📖 Usage Examples
+## 📖 AI-Powered Page Analysis Examples
 
-### 💬 Basic AI Chat with Page Context
+### 🧠 Content Analysis & Summarization
 ```bash
-# 1. Navigate to any website (e.g., news article)
-# 2. Press ⌘J to open AI Chat
-# 3. Enable "Include page context" in settings
-# 4. Ask intelligent questions:
+# Navigate to any content-rich page (news, articles, documentation)
+# Press ⌘J to open AI Chat, enable "Include page context"
 
-"What is this article about?"           # AI summarizes content
-"Extract key points from this page"    # AI extracts important information
-"What are the main arguments?"         # AI analyzes the content
-"Summarize this in 3 bullet points"    # AI provides structured summary
+"What is the main topic of this article?"              # Core subject identification
+"Summarize this page in 2 paragraphs"                 # Concise overview
+"What are the 5 most important points?"               # Key information extraction
+"Explain this concept in simple terms"                # Simplification
+"Give me the TL;DR version"                           # Ultra-brief summary
 ```
 
-### 🤖 Advanced Browser Automation
+### 🔍 Information Extraction & Search
 ```bash
-# 1. Enable browser control in AI Chat settings
-# 2. Type natural language commands:
-
-"Go to github.com and search for React"     # Multi-step navigation
-"Find the latest AI research papers"        # Intelligent search
-"Extract all article titles and links"      # Data extraction
-"Scroll to the bottom and click load more"  # Complex interaction
-"Take me to YouTube and play cat videos"    # Cross-site workflow
+"Is there any mention of artificial intelligence?"    # Content search
+"Find all dates mentioned on this page"               # Temporal information
+"Extract all email addresses and phone numbers"       # Contact information
+"What are the key statistics or numbers?"             # Quantitative data
+"List all the companies or organizations mentioned"   # Entity extraction
+"Find references to specific technologies"             # Technical mentions
 ```
 
-### 🎯 Quick Actions via Command Palette
+### 📊 Data Analysis & Tables
 ```bash
-# Press ⌘K and type to find actions:
-
-"Navigate to Google"          # Quick navigation
-"Extract page content"        # Content extraction
-"Scroll to top"              # Page control
-"Open new tab"               # Tab management
-"Toggle AI chat"             # Interface control
+"Analyze this table and explain the trends"           # Data interpretation
+"What are the highest/lowest values in this data?"    # Comparative analysis
+"Calculate the percentage changes"                    # Mathematical analysis
+"Summarize the key metrics and KPIs"                  # Business data analysis
+"Compare these two datasets"                          # Comparative insights
 ```
 
-### 📄 PDF Analysis & Reading
+### 🎯 Fact-Checking & Verification
 ```bash
-# For PDF documents:
-"Read this PDF and summarize it"              # Full PDF analysis
-"What are the key findings?"                  # Extract specific information
-"How many pages does this document have?"     # Metadata extraction
-"Find all references to AI in this paper"     # Content search
+"Is this information accurate?"                        # Factual verification
+"What are the sources cited?"                         # Source analysis
+"Are there any conflicting statements?"               # Contradiction detection
+"How current is this information?"                    # Timeliness assessment
+"What evidence supports these claims?"                # Evidence evaluation
+```
+
+### 🏗️ Structure & Organization
+```bash
+"What is the structure of this document?"             # Content organization
+"How is this page organized?"                         # Layout analysis
+"What are the main sections?"                         # Content segmentation
+"Create an outline of this page"                     # Structural overview
+"How does this content flow logically?"               # Flow analysis
+```
+
+### 🔬 Technical Analysis
+```bash
+"What technologies are mentioned?"                    # Technical content
+"Explain the technical concepts on this page"         # Technical breakdown
+"What programming languages or frameworks?"          # Development analysis
+"Are there any code examples or APIs?"               # Technical extraction
+"What are the system requirements?"                   # Specification analysis
+```
+
+### 📈 Comparative & Evaluative
+```bash
+"Compare the pros and cons mentioned"                 # Balanced analysis
+"What are the advantages and disadvantages?"         # Critical evaluation
+"How does this compare to industry standards?"        # Benchmarking
+"What are the best practices described?"              # Recommendation analysis
+"What are the potential risks or drawbacks?"          # Risk assessment
+```
+
+### 🎨 Content Quality & Style
+```bash
+"What is the writing style?"                          # Style analysis
+"Is this content well-structured?"                   # Quality assessment
+"What is the target audience?"                       # Audience analysis
+"How readable is this content?"                      # Readability evaluation
+"What is the tone and sentiment?"                    # Sentiment analysis
+```
+
+### 📝 Research & Study Assistance
+```bash
+"Extract key quotes from this article"               # Quote extraction
+"What are the main arguments presented?"             # Argument analysis
+"Summarize the methodology used"                     # Method analysis
+"What are the conclusions reached?"                  # Conclusion extraction
+"What further research is suggested?"                # Research direction
+```
+
+### 🗣️ Language & Communication
+```bash
+"What is the main message or call to action?"        # Communication analysis
+"Are there any persuasive elements?"                 # Persuasion analysis
+"What emotions does this content evoke?"             # Emotional analysis
+"What is the intended impact on readers?"            # Impact assessment
+```
+
+### 🤖 Advanced AI-Powered Operations
+```bash
+# With browser control enabled:
+"Read this entire page and create a study guide"     # Comprehensive analysis
+"Extract all actionable insights"                    # Actionable information
+"Find similar content on other sites"                # Cross-reference search
+"Create a mind map of this topic"                    # Conceptual mapping
+"Generate questions about this content"              # Question generation
+"Suggest related topics to explore"                  # Topic expansion
+"Identify the most important paragraphs"             # Content prioritization
+"Rewrite this in academic language"                  # Style transformation
 ```
 
 ## ⚙️ Configuration
