@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
-import { Key, Check, X, AlertCircle, Eye, EyeOff, TestTube, ChevronDown } from 'lucide-react'
+import { Key, Check, X, AlertCircle, Eye, EyeOff, TestTube, ChevronDown, LogOut } from 'lucide-react'
 import { useAIStore } from '../stores/aiStore'
 
 const APIKeyManager: React.FC = () => {
-  const { providers, activeProvider, updateProvider, setActiveProvider, testConnection } = useAIStore()
+  const { providers, activeProvider, updateProvider, setActiveProvider, testConnection, disconnectProvider } = useAIStore()
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})
   const [testing, setTesting] = useState<Record<string, boolean>>({})
 
@@ -145,14 +145,26 @@ const APIKeyManager: React.FC = () => {
                     <span>Key: {maskApiKey(provider.apiKey)}</span>
                   )}
                 </div>
-                {provider.apiKey && !provider.isActive && activeProvider !== provider.id && (
-                  <button
-                    onClick={() => setActiveProvider(provider.id)}
-                    className="text-[10px] text-blue-600 hover:text-blue-700"
-                  >
-                    Set as active
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {provider.apiKey && !provider.isActive && activeProvider !== provider.id && (
+                    <button
+                      onClick={() => setActiveProvider(provider.id)}
+                      className="text-[10px] text-blue-600 hover:text-blue-700"
+                    >
+                      Set as active
+                    </button>
+                  )}
+                  {provider.apiKey && (
+                    <button
+                      onClick={() => disconnectProvider(provider.id)}
+                      className="flex items-center gap-1 text-[10px] text-red-600 hover:text-red-700"
+                      title="Disconnect and clear API key"
+                    >
+                      <LogOut className="w-3 h-3" />
+                      Disconnect
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

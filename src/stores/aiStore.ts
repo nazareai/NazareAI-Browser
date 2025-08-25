@@ -49,6 +49,7 @@ interface AIState {
   // Actions
   addProvider: (provider: Omit<AIProvider, 'id'>) => void
   updateProvider: (id: string, updates: Partial<AIProvider>) => void
+  disconnectProvider: (id: string) => void
   setActiveProvider: (id: string) => void
   testConnection: (providerId: string) => Promise<boolean>
   chat: (message: string, context?: string) => Promise<string>
@@ -89,7 +90,7 @@ const defaultProviders: AIProvider[] = [
   }
 ]
 
-const STORAGE_VERSION = 5 // Increment to force migration
+const STORAGE_VERSION = 6 // Increment to force migration and update models
 
 export const useAIStore = create<AIState>()(
   persist(
@@ -119,15 +120,33 @@ export const useAIStore = create<AIState>()(
       updateProvider: (id, updates) => {
         set((state) => ({
           providers: state.providers.map(provider =>
-            provider.id === id 
+            provider.id === id
               ? { ...provider, ...updates }
               : provider
           )
         }))
-        
+
         // Test connection if API key was updated
         if (updates.apiKey) {
           get().testConnection(id)
+        }
+      },
+
+      disconnectProvider: (id) => {
+        set((state) => ({
+          providers: state.providers.map(provider =>
+            provider.id === id
+              ? { ...provider, apiKey: '', isActive: false }
+              : provider
+          )
+        }))
+
+        // If this was the active provider, clear it
+        if (get().activeProvider === id) {
+          set({
+            activeProvider: null,
+            isConnected: false
+          })
         }
       },
       
@@ -165,24 +184,38 @@ export const useAIStore = create<AIState>()(
           }
           
           const response = await fetch(testUrl, { headers })
-          
+
+          if (response.status === 401) {
+            console.error(`401 Unauthorized for ${providerId} - API key may be invalid or blocked`)
+            get().updateProvider(providerId, { isActive: false })
+
+            if (get().activeProvider === providerId) {
+              set({
+                activeProvider: null,
+                isConnected: false
+              })
+            }
+
+            return false
+          }
+
           const isConnected = response.ok
-          
+
           get().updateProvider(providerId, { isActive: isConnected })
-          
+
           // Automatically set as active provider if connected
           if (isConnected) {
-            set({ 
+            set({
               activeProvider: providerId,
               isConnected: true
             })
           } else if (get().activeProvider === providerId) {
-            set({ 
+            set({
               activeProvider: null,
-              isConnected: false 
+              isConnected: false
             })
           }
-          
+
           return isConnected
         } catch (error) {
           console.error('Connection test failed:', error)
@@ -555,7 +588,17 @@ For long documents, content may be presented in summary form. Ask for specific s
               messages: messages
             })
           })
-          
+
+          if (response.status === 401) {
+            console.error(`401 Unauthorized - API key may be invalid or blocked for ${provider.name}`)
+            get().disconnectProvider(provider.id)
+            throw new Error('API key is invalid or blocked. Please check your API key or disconnect and reconnect with a new one.')
+          }
+
+          if (!response.ok) {
+            throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+          }
+
           const data = await response.json()
           const assistantMessage: ChatMessage = {
             id: crypto.randomUUID(),
@@ -802,7 +845,13 @@ For long documents, content may be presented in summary form. Ask for specific s
               stream: true
             })
           })
-          
+
+          if (response.status === 401) {
+            console.error(`401 Unauthorized - API key may be invalid or blocked for ${provider.name}`)
+            get().disconnectProvider(provider.id)
+            throw new Error('API key is invalid or blocked. Please check your API key or disconnect and reconnect with a new one.')
+          }
+
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`)
           }
