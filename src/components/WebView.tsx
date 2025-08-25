@@ -12,6 +12,7 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const lastNavigationRef = useRef<{ url: string; time: number }>({ url: '', time: 0 })
   const performanceRef = useRef<{ startTime: number; resourcesLoaded: number }>({ startTime: 0, resourcesLoaded: 0 })
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [error, setError] = useState<{ message: string; details: string } | null>(null)
   const [isCloudflareChallenge, setIsCloudflareChallenge] = useState(false)
@@ -267,6 +268,24 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
 
     // Handle navigation events
     const handleDidStartLoading = () => {
+      // Clear any existing timeout
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+      }
+
+      // Set a timeout to detect stuck pages (30 seconds)
+      loadingTimeoutRef.current = setTimeout(() => {
+        console.warn('Page loading timeout - forcing stop and reload')
+        if (webviewRef.current) {
+          updateTab(tab.id, { isLoading: false })
+          setLoadingProgress(0)
+          setError({
+            message: 'Page load timeout',
+            details: 'The page took too long to load. This may be due to network issues or server problems.'
+          })
+        }
+      }, 30000) // 30 second timeout
+
       updateTab(tab.id, { isLoading: true })
       performanceRef.current.startTime = Date.now()
       performanceRef.current.resourcesLoaded = 0
@@ -276,6 +295,12 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
     }
 
     const handleDidStopLoading = () => {
+      // Clear the loading timeout since loading stopped
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
+
       updateTab(tab.id, { isLoading: false })
       setLoadingProgress(100)
       // Keep progress at 100% briefly for visual feedback
@@ -283,6 +308,12 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
     }
 
     const handleDidFinishLoad = () => {
+      // Clear the loading timeout since page finished loading successfully
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
+
       const title = webview.getTitle() || tab.title
       const loadTime = Date.now() - performanceRef.current.startTime
 
@@ -397,6 +428,12 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
     }
 
     const handleDidFailLoad = (event: any) => {
+      // Clear the loading timeout since loading failed
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
+
       // ERR_ABORTED (-3) can happen for several reasons including Cloudflare challenges
       if (event.errorCode === -3) {
         // Check if this is a Cloudflare challenge
@@ -446,10 +483,23 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
           // Don't update loading state, let the challenge complete
           return
         }
-        // For other aborted loads, just return
+
+        // For other aborted loads, check if it's a legitimate abort or a real error
+        console.log('Provisional load aborted for URL:', event.validatedURL, 'Reason:', event.errorDescription)
+
+        // Only treat as error if it's not a common abort scenario
+        const isLegitimateAbort = event.errorDescription?.includes('aborted') ||
+                                event.errorDescription?.includes('cancelled') ||
+                                event.errorDescription?.includes('redirect')
+
+        if (!isLegitimateAbort) {
+          console.warn('Unexpected abort error:', event.errorDescription)
+          updateTab(tab.id, { isLoading: false })
+          setLoadingProgress(0)
+        }
         return
       }
-      
+
       console.log('Failed provisional load:', event.errorDescription, 'for URL:', event.validatedURL, 'errorCode:', event.errorCode)
     }
 
@@ -524,6 +574,12 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
 
     // Cleanup
     return () => {
+      // Clear any pending loading timeout
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
+
       // Run cleanup before removing listeners
       handleBeforeUnload()
 
