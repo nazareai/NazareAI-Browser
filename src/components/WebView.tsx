@@ -675,7 +675,7 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
         plugins="true"
         // @ts-ignore
         nodeintegration="false"
-        webpreferences="javascript=true,webgl=true,webSecurity=true,allowRunningInsecureContent=true,nodeIntegration=false,contextIsolation=true,experimentalFeatures=true,enableBlinkFeatures=CSSColorSchemeUARendering,backgroundThrottling=false"
+        webpreferences="javascript=true,webgl=true,webSecurity=true,allowRunningInsecureContent=true,nodeIntegration=false,contextIsolation=true,experimentalFeatures=true,enableBlinkFeatures=CSSColorSchemeUARendering,backgroundThrottling=false,images=true,css=true,fonts=true,media=true,audio=true,video=true,plugins=true,databases=true,localStorage=true,sessionStorage=true,indexedDB=true,cache=true,appCache=true,webAudio=true,webRTC=true,sharedWorker=true,serviceWorker=true,backgroundSync=true"
         // @ts-ignore
         disablewebsecurity="false"
         // @ts-ignore

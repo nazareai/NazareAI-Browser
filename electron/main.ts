@@ -195,93 +195,72 @@ class AIBrowser {
         const userAgent = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.0.0 Safari/537.36`
         webContents.setUserAgent(userAgent)
 
-        // Override navigator properties to hide Electron context
+        // Simplified anti-detection - only essential overrides
         webContents.executeJavaScript(`
           (function() {
-            // Hide Electron-specific properties
-            delete window.navigator.__defineGetter__;
-            delete window.navigator.__defineSetter__;
-
-            // Override navigator to appear more like Chrome
+            // Hide webdriver to avoid detection
             Object.defineProperty(navigator, 'webdriver', {
               get: () => undefined,
             });
 
-            Object.defineProperty(navigator, 'languages', {
-              get: () => ['en-US', 'en', 'cs'],
-            });
-
-            // Override permissions API to prevent detection
+            // Override permissions to be less restrictive
             const originalQuery = window.navigator.permissions.query;
             window.navigator.permissions.query = function(parameters) {
               return originalQuery.call(this, parameters).catch(() => {
-                return { state: 'granted' }; // Default to granted for anti-detection
+                return { state: 'granted' };
               });
             };
 
-            // Override notification API
-            if ('Notification' in window) {
-              const originalRequestPermission = Notification.requestPermission;
-              Notification.requestPermission = function() {
-                return originalRequestPermission.apply(this, arguments).catch(() => 'granted');
-              };
-            }
-
-            console.log('Anti-detection measures applied');
+            console.log('Basic anti-detection applied');
           })();
         `).catch(err => console.log('Failed to apply anti-detection:', err))
 
-        // Add comprehensive headers to bypass anti-bot measures
+        // Simplified headers - only add essential ones to avoid SSL issues
         webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, callback) => {
           const headers = { ...details.requestHeaders }
 
-          // Essential browser headers
-          headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
-          headers['Accept-Language'] = 'en-US,en;q=0.9,cs;q=0.8'
-          headers['Accept-Encoding'] = 'gzip, deflate, br'
-          headers['Cache-Control'] = 'max-age=0'
-          headers['Upgrade-Insecure-Requests'] = '1'
-          headers['Sec-Fetch-Site'] = 'none'
-          headers['Sec-Fetch-Mode'] = 'navigate'
-          headers['Sec-Fetch-User'] = '?1'
-          headers['Sec-Fetch-Dest'] = 'document'
-          headers['DNT'] = '1'
-          headers['Sec-Ch-Ua-Mobile'] = '?0'
-          headers['Sec-Ch-Ua-Platform'] = '"macOS"'
-          headers['Sec-Ch-Ua'] = `"Chromium";v="${process.versions.chrome}", "Not(A:Brand";v="24", "Google Chrome";v="${process.versions.chrome}"`
-
-          // Add appropriate referer
-          if (!headers['Referer']) {
-            if (details.url.includes('seznam.cz')) {
-              headers['Referer'] = 'https://www.seznam.cz/'
-            } else if (details.url.includes('google.com')) {
-              headers['Referer'] = 'https://www.google.com/'
-            } else if (details.url.includes('facebook.com')) {
-              headers['Referer'] = 'https://www.facebook.com/'
-            }
+          // Only add critical headers that help with compatibility, don't overwrite existing ones
+          if (!headers['Accept-Language']) {
+            headers['Accept-Language'] = 'en-US,en;q=0.9,cs;q=0.8'
           }
 
-          // Add origin header for CORS
-          if (details.url.includes('://')) {
-            const url = new URL(details.url)
-            headers['Origin'] = `${url.protocol}//${url.host}`
+          if (!headers['Accept-Encoding']) {
+            headers['Accept-Encoding'] = 'gzip, deflate, br'
+          }
+
+          if (!headers['Cache-Control']) {
+            headers['Cache-Control'] = 'max-age=0'
+          }
+
+          // Add User-Agent Client Hints only if not present
+          if (!headers['Sec-Ch-Ua-Mobile']) {
+            headers['Sec-Ch-Ua-Mobile'] = '?0'
+            headers['Sec-Ch-Ua-Platform'] = '"macOS"'
+            headers['Sec-Ch-Ua'] = `"Chromium";v="${process.versions.chrome}", "Not(A:Brand";v="24", "Google Chrome";v="${process.versions.chrome}"`
+          }
+
+          // Only add referer for specific problematic sites, don't force it everywhere
+          if (!headers['Referer']) {
+            if (details.url.includes('seznam.cz') && details.url.includes('idnes.cz')) {
+              headers['Referer'] = 'https://www.seznam.cz/'
+            }
           }
 
           callback({ requestHeaders: headers })
         })
 
-        // Handle response headers to remove anti-bot measures
+        // Minimal response header modifications - only for specific cases
         webContents.session.webRequest.onHeadersReceived({ urls: ['*://*/*'] }, (details, callback) => {
           const responseHeaders = { ...details.responseHeaders }
 
-          // Remove or modify headers that might cause issues
-          delete responseHeaders['x-frame-options']
-          delete responseHeaders['content-security-policy']
+          // Only modify headers for known problematic sites, not globally
+          const url = details.url || ''
 
-          // Add some headers that help with compatibility
-          responseHeaders['Access-Control-Allow-Origin'] = ['*']
-          responseHeaders['Access-Control-Allow-Methods'] = ['GET, POST, PUT, DELETE, OPTIONS']
-          responseHeaders['Access-Control-Allow-Headers'] = ['*']
+          if (url.includes('seznam.cz') || url.includes('idnes.cz')) {
+            // For specific sites, remove restrictive headers that block functionality
+            delete responseHeaders['x-frame-options']
+            delete responseHeaders['content-security-policy']
+          }
 
           callback({ responseHeaders })
         })
@@ -375,30 +354,9 @@ class AIBrowser {
         // Enable NTLM credentials if needed
         webContents.session.allowNTLMCredentialsForDomains('*')
         
-        // Enhanced anti-detection and security measures
+        // Additional anti-detection for plugins (keep this simple)
         webContents.executeJavaScript(`
           (function() {
-            // Remove webdriver property
-            Object.defineProperty(navigator, 'webdriver', {
-              get: () => undefined,
-            });
-
-            // Remove automation properties
-            delete window.navigator.__proto__.webdriver;
-
-            // Override permissions API more comprehensively
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-              parameters.name === 'notifications' ?
-                Promise.resolve({ state: Notification.permission }) :
-                originalQuery(parameters)
-            );
-
-            // Add additional anti-detection measures
-            Object.defineProperty(navigator, 'languages', {
-              get: () => ['en-US', 'en']
-            });
-
             // Override plugin detection to appear more like a real browser
             Object.defineProperty(navigator, 'plugins', {
               get: () => [
@@ -406,26 +364,6 @@ class AIBrowser {
                 { name: 'Chrome PDF Viewer', description: '', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
                 { name: 'Native Client', description: '', filename: 'internal-nacl-plugin' }
               ]
-            });
-
-            // Override mime types
-            Object.defineProperty(navigator, 'mimeTypes', {
-              get: () => [
-                { type: 'application/pdf', description: 'Portable Document Format', suffixes: 'pdf' },
-                { type: 'application/x-google-chrome-pdf', description: 'Portable Document Format', suffixes: 'pdf' }
-              ]
-            });
-
-            // Add security monitoring
-            const securityObserver = new PerformanceObserver(() => {
-              // Monitor for potential security issues
-            });
-
-            // Clean up on page unload
-            window.addEventListener('beforeunload', () => {
-              if (securityObserver) {
-                securityObserver.disconnect();
-              }
             });
           })();
         `).catch(() => {})
@@ -446,85 +384,27 @@ class AIBrowser {
           return { action: 'deny' }
         })
         
-        // Enhanced permission request handler with security considerations
+        // Simplified permission request handler - allow most permissions to prevent blocking
         webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
           const requestingOrigin = details.requestingUrl ? new URL(details.requestingUrl).origin : 'unknown'
 
-          // Define permission policies based on context and origin
-          const permissionPolicies = {
-            // Always allow these safe permissions
-            'clipboard-read': true,
-            'clipboard-write': true,
-            'fullscreen': true,
-            'pointerLock': true,
+          // Define minimal restrictions - only block truly dangerous permissions
+          const blockedPermissions = [
+            'accessibility-events',  // Security risk
+            'background-sync',       // Resource intensive
+            'background-fetch',      // Resource intensive
+            'usb',                   // Hardware access
+            'hid',                   // Hardware access
+            'serial',                // Hardware access
+            'bluetooth',             // Hardware access
+            'idle-detection',        // Privacy risk
+            'wake-lock'              // Battery impact
+          ]
 
-            // Allow media with user confirmation for known sites
-            'media': ['https://www.youtube.com', 'https://www.netflix.com', 'https://www.twitch.tv'].some(site => requestingOrigin.includes(site)),
+          const isAllowed = !blockedPermissions.includes(permission)
 
-            // Allow geolocation only for trusted navigation/mapping sites
-            'geolocation': ['https://www.google.com', 'https://maps.google.com', 'https://www.openstreetmap.org'].some(site => requestingOrigin.includes(site)),
-
-            // Allow notifications for major platforms
-            'notifications': ['https://www.google.com', 'https://www.youtube.com', 'https://www.github.com', 'https://mail.google.com'].some(site => requestingOrigin.includes(site)),
-
-            // Allow camera/microphone with explicit user confirmation
-            'camera': false, // Require explicit user consent
-            'microphone': false, // Require explicit user consent
-
-            // MIDI and display capture - generally safe
-            'midi': true,
-            'midiSysex': true,
-            'display-capture': true,
-
-            // Clipboard permissions - allow read/write for general use
-            'clipboard-sanitized-write': true,
-
-            // File system access - block by default for security
-            'fileSystem': false,
-
-            // Media key system for DRM content
-            'mediaKeySystem': true,
-
-            // Additional safe permissions
-            'keyboardLock': true,
-
-            // Block potentially dangerous permissions
-            'accessibility-events': false,
-            'background-sync': false,
-            'background-fetch': false,
-            'persistent-storage': false,
-            'payment-handler': false,
-            'protocol-handler': false,
-            'usb': false,
-            'hid': false,
-            'serial': false,
-            'bluetooth': false,
-            'idle-detection': false,
-            'wake-lock': false
-          }
-
-          const policy = (permissionPolicies as any)[permission]
-          let isAllowed = true // Default to allow to prevent blocking
-
-          try {
-            // Check if permission exists in our policies
-            if (policy !== undefined) {
-              isAllowed = policy === true ||
-                         (policy === requestingOrigin) ||
-                         (Array.isArray(policy) && policy.includes(requestingOrigin))
-            } else {
-              // For unknown permissions, allow them by default to prevent blocking
-              console.log(`Unknown permission ${permission}, allowing by default`)
-              isAllowed = true
-            }
-          } catch (error) {
-            console.error('Error checking permission policy:', error)
-            // On error, default to allow to prevent blocking
-            isAllowed = true
-          }
-
-          // Only log permission denials or important permissions
-          if (!isAllowed || ['media', 'camera', 'microphone', 'geolocation'].includes(permission)) {
+          // Only log important permissions or denials
+          if (!isAllowed || ['geolocation', 'camera', 'microphone', 'notifications'].includes(permission)) {
             console.log(`Permission ${permission} requested by ${requestingOrigin}: ${isAllowed ? 'ALLOWED' : 'DENIED'}`)
           }
 
