@@ -143,13 +143,13 @@ function parseWorkflowFromText(text: string, goal: string): any[] {
       const searchMatch = line.match(/(?:search for|find)\s+(.+?)(?:\s|$|[.,!])/i)
       const query = searchMatch ? searchMatch[1].trim() : goal.replace(/find|search|buy|get/i, '').trim()
       if (query && query.length > 2) {
-        steps.push({
-          action: 'search',
+      steps.push({
+        action: 'search',
           target: query,
           description: `Search for "${query}"`,
           parameters: { query },
-          expectedResult: 'Search results page loads'
-        })
+        expectedResult: 'Search results page loads'
+      })
         console.log('✅ Added search step')
       }
     }
@@ -161,13 +161,13 @@ function parseWorkflowFromText(text: string, goal: string): any[] {
         const element = elementMatch[1].trim()
         // Skip if element contains malformed JSON fragments
         if (!element.includes('field') && !element.includes('}') && !element.includes('{')) {
-          steps.push({
+        steps.push({
             action: 'findAndClick',
             target: element,
             description: `Click on ${element}`,
             parameters: { elementDescription: element },
-            expectedResult: 'Element clicked successfully'
-          })
+          expectedResult: 'Element clicked successfully'
+        })
           console.log('✅ Added click step')
         }
       }
@@ -1013,11 +1013,11 @@ Return ONLY the JSON array with all required parameters filled in for: ${goal}`
             console.log(`📝 Created browser action for step ${index + 1}:`, browserAction)
             
             return {
-              id: crypto.randomUUID(),
-              description: step.description || `Step ${index + 1}`,
+            id: crypto.randomUUID(),
+            description: step.description || `Step ${index + 1}`,
               action: browserAction,
-              status: 'pending',
-              timestamp: new Date()
+            status: 'pending',
+            timestamp: new Date()
             }
           })
 
@@ -1050,7 +1050,7 @@ Return ONLY the JSON array with all required parameters filled in for: ${goal}`
           console.log('⚡ Starting workflow execution...')
           setTimeout(async () => {
             try {
-              await get().executeWorkflowStep()
+          await get().executeWorkflowStep()
             } catch (execError) {
               console.error('❌ Failed to execute first workflow step:', execError)
               // Update workflow status to failed
@@ -1275,7 +1275,7 @@ Return only a JSON object with the best input selector:
           
           const result = await get().executeBrowserActions([enhancedAction])
           const actionResult = result[0]
-          
+
           console.log('🏁 Browser action execution returned:', actionResult)
 
           // If this was a navigation action, wait for page to load and elements to be available
