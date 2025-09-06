@@ -3,8 +3,11 @@
 # Create a simple icon for NazareAI Browser
 echo "Creating placeholder icon for NazareAI Browser..."
 
+# Ensure build_dmg directory exists
+mkdir -p build_dmg
+
 # Create a 1024x1024 PNG with a gradient background
-cat > build/create_icon.py << 'EOF'
+cat > build_dmg/create_icon.py << 'EOF'
 from PIL import Image, ImageDraw, ImageFont
 import os
 
@@ -48,43 +51,43 @@ if font:
     draw.text((text_x, text_y), text, fill=(255, 255, 255), font=font)
 
 # Save the PNG
-img.save('build/icon.png')
+img.save('build_dmg/icon.png')
 print("Icon created successfully!")
 EOF
 
 # Check if Python and PIL are available
-if command -v python3 &> /dev/null && python3 -c "import PIL" 2> /dev/null; then
-    python3 build/create_icon.py
+if command -v python &> /dev/null && python -c "import PIL" 2> /dev/null; then
+    python build_dmg/create_icon.py
     
     # Convert PNG to ICNS using macOS tools
-    if [ -f "build/icon.png" ]; then
+    if [ -f "build_dmg/icon.png" ]; then
         echo "Converting to ICNS format..."
         # Create iconset directory
-        mkdir -p build/icon.iconset
+        mkdir -p build_dmg/icon.iconset
         
         # Generate different sizes
-        sips -z 16 16     build/icon.png --out build/icon.iconset/icon_16x16.png
-        sips -z 32 32     build/icon.png --out build/icon.iconset/icon_16x16@2x.png
-        sips -z 32 32     build/icon.png --out build/icon.iconset/icon_32x32.png
-        sips -z 64 64     build/icon.png --out build/icon.iconset/icon_32x32@2x.png
-        sips -z 128 128   build/icon.png --out build/icon.iconset/icon_128x128.png
-        sips -z 256 256   build/icon.png --out build/icon.iconset/icon_128x128@2x.png
-        sips -z 256 256   build/icon.png --out build/icon.iconset/icon_256x256.png
-        sips -z 512 512   build/icon.png --out build/icon.iconset/icon_256x256@2x.png
-        sips -z 512 512   build/icon.png --out build/icon.iconset/icon_512x512.png
-        sips -z 1024 1024 build/icon.png --out build/icon.iconset/icon_512x512@2x.png
+        sips -z 16 16     build_dmg/icon.png --out build_dmg/icon.iconset/icon_16x16.png
+        sips -z 32 32     build_dmg/icon.png --out build_dmg/icon.iconset/icon_16x16@2x.png
+        sips -z 32 32     build_dmg/icon.png --out build_dmg/icon.iconset/icon_32x32.png
+        sips -z 64 64     build_dmg/icon.png --out build_dmg/icon.iconset/icon_32x32@2x.png
+        sips -z 128 128   build_dmg/icon.png --out build_dmg/icon.iconset/icon_128x128.png
+        sips -z 256 256   build_dmg/icon.png --out build_dmg/icon.iconset/icon_128x128@2x.png
+        sips -z 256 256   build_dmg/icon.png --out build_dmg/icon.iconset/icon_256x256.png
+        sips -z 512 512   build_dmg/icon.png --out build_dmg/icon.iconset/icon_256x256@2x.png
+        sips -z 512 512   build_dmg/icon.png --out build_dmg/icon.iconset/icon_512x512.png
+        sips -z 1024 1024 build_dmg/icon.png --out build_dmg/icon.iconset/icon_512x512@2x.png
         
         # Convert to icns
-        iconutil -c icns build/icon.iconset -o build/icon.icns
+        iconutil -c icns build_dmg/icon.iconset -o build_dmg/icon.icns
         
         # Clean up
-        rm -rf build/icon.iconset
-        rm -f build/create_icon.py
+        rm -rf build_dmg/icon.iconset
+        rm -f build_dmg/create_icon.py
         
-        echo "✅ Icon created successfully at build/icon.icns"
+        echo "✅ Icon created successfully at build_dmg/icon.icns"
     fi
 else
-    echo "⚠️  Python3 with PIL not found. Creating a simple placeholder icon..."
+    echo "⚠️  Python with PIL not found. Creating a simple placeholder icon..."
     
     # Create a simple 1024x1024 blue square as PNG using ImageMagick if available
     if command -v convert &> /dev/null; then
@@ -92,27 +95,27 @@ else
             -define gradient:angle=45 \
             gradient:'#1e3a8a-#3b82f6' \
             -fill white -gravity center -pointsize 500 -annotate +0+0 'N' \
-            build/icon.png
+            build_dmg/icon.png
             
         # Convert to ICNS
-        mkdir -p build/icon.iconset
-        sips -z 16 16     build/icon.png --out build/icon.iconset/icon_16x16.png 2>/dev/null
-        sips -z 32 32     build/icon.png --out build/icon.iconset/icon_16x16@2x.png 2>/dev/null
-        sips -z 32 32     build/icon.png --out build/icon.iconset/icon_32x32.png 2>/dev/null
-        sips -z 64 64     build/icon.png --out build/icon.iconset/icon_32x32@2x.png 2>/dev/null
-        sips -z 128 128   build/icon.png --out build/icon.iconset/icon_128x128.png 2>/dev/null
-        sips -z 256 256   build/icon.png --out build/icon.iconset/icon_128x128@2x.png 2>/dev/null
-        sips -z 256 256   build/icon.png --out build/icon.iconset/icon_256x256.png 2>/dev/null
-        sips -z 512 512   build/icon.png --out build/icon.iconset/icon_256x256@2x.png 2>/dev/null
-        sips -z 512 512   build/icon.png --out build/icon.iconset/icon_512x512.png 2>/dev/null
-        sips -z 1024 1024 build/icon.png --out build/icon.iconset/icon_512x512@2x.png 2>/dev/null
-        iconutil -c icns build/icon.iconset -o build/icon.icns 2>/dev/null
-        rm -rf build/icon.iconset
+        mkdir -p build_dmg/icon.iconset
+        sips -z 16 16     build_dmg/icon.png --out build_dmg/icon.iconset/icon_16x16.png 2>/dev/null
+        sips -z 32 32     build_dmg/icon.png --out build_dmg/icon.iconset/icon_16x16@2x.png 2>/dev/null
+        sips -z 32 32     build_dmg/icon.png --out build_dmg/icon.iconset/icon_32x32.png 2>/dev/null
+        sips -z 64 64     build_dmg/icon.png --out build_dmg/icon.iconset/icon_32x32@2x.png 2>/dev/null
+        sips -z 128 128   build_dmg/icon.png --out build_dmg/icon.iconset/icon_128x128.png 2>/dev/null
+        sips -z 256 256   build_dmg/icon.png --out build_dmg/icon.iconset/icon_128x128@2x.png 2>/dev/null
+        sips -z 256 256   build_dmg/icon.png --out build_dmg/icon.iconset/icon_256x256.png 2>/dev/null
+        sips -z 512 512   build_dmg/icon.png --out build_dmg/icon.iconset/icon_256x256@2x.png 2>/dev/null
+        sips -z 512 512   build_dmg/icon.png --out build_dmg/icon.iconset/icon_512x512.png 2>/dev/null
+        sips -z 1024 1024 build_dmg/icon.png --out build_dmg/icon.iconset/icon_512x512@2x.png 2>/dev/null
+        iconutil -c icns build_dmg/icon.iconset -o build_dmg/icon.icns 2>/dev/null
+        rm -rf build_dmg/icon.iconset
         echo "✅ Icon created with ImageMagick"
     else
         echo "❌ Could not create icon. Please create an icon manually:"
         echo "   1. Create a 1024x1024 PNG image named 'icon.png'"
-        echo "   2. Place it in the 'build' directory"
+        echo "   2. Place it in the 'build_dmg' directory"
         echo "   3. Run: ./create-icon.sh again"
     fi
 fi 

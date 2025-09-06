@@ -94,7 +94,7 @@
           ]
         }
       ],
-      "icon": "build/icon.icns",
+      "icon": "build_dmg/icon.icns",
       "extendInfo": "./Info.plist"
     },
     "dmg": {

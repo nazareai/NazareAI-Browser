@@ -180,7 +180,7 @@ npm run package:dmg      # macOS DMG only
 ```
 
 ### 📦 Distribution Files
-Built packages are saved to `build/` directory:
+Built packages are saved to `build_dmg/` directory:
 - **DMG**: `NazareAI Browser-0.1.0-arm64.dmg` (Apple Silicon)
 - **DMG**: `NazareAI Browser-0.1.0-x64.dmg` (Intel)
 - **ZIP**: `NazareAI Browser-0.1.0-arm64-mac.zip`
