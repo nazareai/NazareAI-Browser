@@ -21,21 +21,21 @@ class AIBrowser {
   private isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
 
   constructor() {
-    // Enable hardware acceleration in production
+    // Enable hardware acceleration
     if (!this.isDev) {
       app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder')
-      app.commandLine.appendSwitch('ignore-gpu-blocklist')
     }
+    app.commandLine.appendSwitch('ignore-gpu-blocklist')
     
     // Add switches to make the browser appear more like regular Chrome
     app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
-    app.commandLine.appendSwitch('disable-features', 'site-per-process')
-    
-    // Enable features that help with modern websites
     app.commandLine.appendSwitch('enable-features', 'NetworkService,NetworkServiceInProcess')
     
     // Disable automation flags that sites might detect
     app.commandLine.appendSwitch('disable-automation')
+    
+    // Enable webview tag properly
+    app.commandLine.appendSwitch('enable-webview-tag')
     
     this.init()
   }
@@ -229,11 +229,11 @@ class AIBrowser {
         nodeIntegration: false,
         contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
-        webSecurity: true,
+        webSecurity: false, // Disable to prevent webview issues
         webviewTag: true, // Enable webview tag
-        allowRunningInsecureContent: false,
-        experimentalFeatures: false,
-        sandbox: true,
+        allowRunningInsecureContent: true, // Allow mixed content
+        experimentalFeatures: true, // Enable experimental features
+        sandbox: false, // Disable sandbox for webview compatibility
       },
       titleBarStyle: 'hiddenInset', // Modern look
       show: false, // Don't show until ready
@@ -276,212 +276,50 @@ class AIBrowser {
     // Handle webview navigation permissions
     if (this.mainWindow) {
       this.mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
-        // Configure webview security preferences
+        // Configure webview for maximum compatibility
         webPreferences.nodeIntegration = false
         webPreferences.contextIsolation = true
-        webPreferences.webSecurity = true
-        webPreferences.allowRunningInsecureContent = false
+        webPreferences.webSecurity = false // Disable to prevent blocking
+        webPreferences.allowRunningInsecureContent = true
         webPreferences.navigateOnDragDrop = false
         
         // Allow JavaScript and plugins
         webPreferences.javascript = true
         webPreferences.plugins = true
         
-        // Enable additional features needed for modern websites
+        // Enable all features needed for modern websites
         webPreferences.webgl = true
         webPreferences.experimentalFeatures = true
         webPreferences.backgroundThrottling = false
+        webPreferences.offscreen = false // Disable offscreen rendering
         
-        // Add session persistence for Cloudflare
+        // Use persistent session for cookies and storage
         webPreferences.partition = 'persist:main'
         
-        // Enable features that help with Cloudflare
+        // Enable features that help with compatibility
         webPreferences.enableBlinkFeatures = 'CSSColorSchemeUARendering'
+        webPreferences.disableBlinkFeatures = ''
       })
 
       // Handle webview navigation requests
       this.mainWindow.webContents.on('did-attach-webview', (event, webContents) => {
-        // Set proper user agent for the webview - make it appear exactly like Chrome
-        const chromeVersion = process.versions.chrome
-        const userAgent = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.0.0 Safari/537.36`
-        webContents.setUserAgent(userAgent)
+        // Do not inject JavaScript or override UA per webview; rely on session-level UA
 
-        // Simplified anti-detection - only essential overrides
-        webContents.executeJavaScript(`
-          (function() {
-            // Hide webdriver to avoid detection
-            Object.defineProperty(navigator, 'webdriver', {
-              get: () => undefined,
-            });
+        // Avoid per-webview header overrides to prevent reload loops
 
-            // Override permissions to be less restrictive
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = function(parameters) {
-              return originalQuery.call(this, parameters).catch(() => {
-                return { state: 'granted' };
-              });
-            };
+        // Optional: Observe cookies if needed for debugging (disabled by default)
 
-            console.log('Basic anti-detection applied');
-          })();
-        `).catch(err => console.log('Failed to apply anti-detection:', err))
-
-        // Simplified headers - only add essential ones to avoid SSL issues
-        webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, callback) => {
-          const headers = { ...details.requestHeaders }
-
-          // Only add critical headers that help with compatibility, don't overwrite existing ones
-          if (!headers['Accept-Language']) {
-            headers['Accept-Language'] = 'en-US,en;q=0.9,cs;q=0.8'
-          }
-
-          if (!headers['Accept-Encoding']) {
-            headers['Accept-Encoding'] = 'gzip, deflate, br'
-          }
-
-          if (!headers['Cache-Control']) {
-            headers['Cache-Control'] = 'max-age=0'
-          }
-
-          // Add User-Agent Client Hints only if not present
-          if (!headers['Sec-Ch-Ua-Mobile']) {
-            headers['Sec-Ch-Ua-Mobile'] = '?0'
-            headers['Sec-Ch-Ua-Platform'] = '"macOS"'
-            headers['Sec-Ch-Ua'] = `"Chromium";v="${process.versions.chrome}", "Not(A:Brand";v="24", "Google Chrome";v="${process.versions.chrome}"`
-          }
-
-          // Only add referer for specific problematic sites, don't force it everywhere
-          if (!headers['Referer']) {
-            if (details.url.includes('seznam.cz') && details.url.includes('idnes.cz')) {
-              headers['Referer'] = 'https://www.seznam.cz/'
-            }
-          }
-
-          callback({ requestHeaders: headers })
-        })
-
-        // Minimal response header modifications - only for specific cases
-        webContents.session.webRequest.onHeadersReceived({ urls: ['*://*/*'] }, (details, callback) => {
-          const responseHeaders = { ...details.responseHeaders }
-
-          // Only modify headers for known problematic sites, not globally
-          const url = details.url || ''
-
-          if (url.includes('seznam.cz') || url.includes('idnes.cz')) {
-            // For specific sites, remove restrictive headers that block functionality
-            delete responseHeaders['x-frame-options']
-            delete responseHeaders['content-security-policy']
-          }
-
-          callback({ responseHeaders })
-        })
-
-        // Set up cookie handling for Cloudflare - just log changes for debugging
-        webContents.session.cookies.on('changed', (event, cookie, cause, removed) => {
-          if (cookie.domain && (cookie.domain.includes('search.sh') || cookie.domain.includes('cloudflare') || cookie.name.includes('cf_'))) {
-            console.log('Important cookie changed:', cookie.name, cause, removed ? 'removed' : 'added')
-          }
-        })
-
-        // Enhanced Cloudflare challenge detection
-        webContents.on('dom-ready', () => {
-          // Inject script to detect and handle Cloudflare challenges
-          webContents.executeJavaScript(`
-            (function() {
-              // Cloudflare challenge detection
-              function detectCloudflareChallenge() {
-                const cfSelectors = [
-                  '[data-ray]',
-                  '.cf-browser-verification',
-                  '.cf-challenge-form',
-                  '[id*="cf-challenge"]',
-                  '.cf-error-details',
-                  'form[action*="challenge"]'
-                ];
-
-                for (const selector of cfSelectors) {
-                  if (document.querySelector(selector)) {
-                    console.log('[CF] Challenge detected:', selector);
-                    return true;
-                  }
-                }
-
-                // Check for Cloudflare error pages
-                if (document.title && (
-                  document.title.includes('Cloudflare') ||
-                  document.title.includes('cf-browser-verification') ||
-                  document.title.includes('Please wait...')
-                )) {
-                  console.log('[CF] Challenge page detected by title:', document.title);
-                  return true;
-                }
-
-                // Check for specific Cloudflare scripts or content
-                const scripts = document.querySelectorAll('script');
-                for (const script of scripts) {
-                  const src = script.src || '';
-                  const content = script.innerHTML || '';
-                  if (src.includes('cloudflare') || src.includes('cf-challenge') ||
-                      content.includes('cf-browser-verification') || content.includes('jschl')) {
-                    console.log('[CF] Challenge detected in script');
-                    return true;
-                  }
-                }
-
-                return false;
-              }
-
-              // Monitor for challenge completion
-              let challengeDetected = false;
-              const checkForChallenge = () => {
-                if (detectCloudflareChallenge() && !challengeDetected) {
-                  challengeDetected = true;
-                  console.log('[CF] Challenge initiated - waiting for completion...');
-
-                  // Notify main process about challenge
-                  if (window.electronAPI && window.electronAPI.onCloudflareChallenge) {
-                    window.electronAPI.onCloudflareChallenge(true);
-                  }
-                } else if (challengeDetected && !detectCloudflareChallenge()) {
-                  challengeDetected = false;
-                  console.log('[CF] Challenge completed');
-
-                  // Notify main process about challenge completion
-                  if (window.electronAPI && window.electronAPI.onCloudflareChallenge) {
-                    window.electronAPI.onCloudflareChallenge(false);
-                  }
-                }
-              };
-
-              // Check immediately and then periodically
-              checkForChallenge();
-              setInterval(checkForChallenge, 1000);
-            })()
-          `).catch(() => {
-            // Silently fail if injection doesn't work
-          });
-        })
+        // Do not inject challenge detection scripts; let sites handle their own flows
         
         // Enable NTLM credentials if needed
         webContents.session.allowNTLMCredentialsForDomains('*')
         
-        // Additional anti-detection for plugins (keep this simple)
-        webContents.executeJavaScript(`
-          (function() {
-            // Override plugin detection to appear more like a real browser
-            Object.defineProperty(navigator, 'plugins', {
-              get: () => [
-                { name: 'Chrome PDF Plugin', description: 'Portable Document Format', filename: 'internal-pdf-viewer' },
-                { name: 'Chrome PDF Viewer', description: '', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-                { name: 'Native Client', description: '', filename: 'internal-nacl-plugin' }
-              ]
-            });
-          })();
-        `).catch(() => {})
+        // Do not modify navigator.plugins; avoid anti-bot loops
         
-        // Set permissive navigation policy
+        // Allow all navigation
         webContents.on('will-navigate', (navEvent, navigationUrl) => {
-          // Don't prevent any navigation
+          // Allow all navigation - don't prevent anything
+          navEvent.preventDefault = () => {} // Disable preventDefault
         })
         
         // Handle new-window events for target="_blank" links
@@ -495,97 +333,63 @@ class AIBrowser {
           return { action: 'deny' }
         })
         
-        // Simplified permission request handler - allow most permissions to prevent blocking
-        webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
-          const requestingOrigin = details.requestingUrl ? new URL(details.requestingUrl).origin : 'unknown'
-
-          // Define minimal restrictions - only block truly dangerous permissions
-          const blockedPermissions = [
-            'accessibility-events',  // Security risk
-            'background-sync',       // Resource intensive
-            'background-fetch',      // Resource intensive
-            'usb',                   // Hardware access
-            'hid',                   // Hardware access
-            'serial',                // Hardware access
-            'bluetooth',             // Hardware access
-            'idle-detection',        // Privacy risk
-            'wake-lock'              // Battery impact
+        // Handle permission requests
+        webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+          // Allow all common web permissions
+          const allowedPermissions = [
+            'media',
+            'geolocation', 
+            'notifications',
+            'midiSysex',
+            'pointerLock',
+            'fullscreen',
+            'openExternal',
+            'clipboard-read',
+            'clipboard-write',
+            'camera',
+            'microphone'
           ]
-
-          const isAllowed = !blockedPermissions.includes(permission)
-
-          // Only log important permissions or denials
-          if (!isAllowed || ['geolocation', 'camera', 'microphone', 'notifications'].includes(permission)) {
-            console.log(`Permission ${permission} requested by ${requestingOrigin}: ${isAllowed ? 'ALLOWED' : 'DENIED'}`)
-          }
-
-          // Respond immediately to prevent blocking
-          callback(isAllowed)
+          
+          callback(allowedPermissions.includes(permission))
         })
         
-        // Disable any navigation restrictions
+        // Allow unload events
         webContents.on('will-prevent-unload', (event) => {
-          event.preventDefault()
+          // Don't prevent unload - let pages handle their own unload
         })
         
         // Enable all features that might be needed
         webContents.session.setSpellCheckerEnabled(true)
         
-        // Enhanced certificate error handling with security considerations
+        // Handle certificate errors
         webContents.on('certificate-error', (event, url, error, certificate, callback) => {
           console.log(`Certificate error for ${url}: ${error}`)
+          
+          // In a browser, we should generally trust the user's decision
+          // For development, always accept certificates
+          if (!app.isPackaged) {
+            event.preventDefault()
+            callback(true)
+            return
+          }
+          
+          // For production, show a warning but let the user proceed if they want
+          const { dialog } = require('electron')
+          const choice = dialog.showMessageBoxSync(this.mainWindow, {
+            type: 'warning',
+            buttons: ['Go Back', 'Continue Anyway'],
+            defaultId: 0,
+            cancelId: 0,
+            title: 'Security Warning',
+            message: 'This site has an invalid security certificate',
+            detail: `The certificate for ${new URL(url).hostname} is not trusted.\n\nThis could mean:\n• The site is using a self-signed certificate\n• The certificate has expired\n• Your connection might be intercepted\n\nOnly continue if you trust this website.`
+          })
 
-          // Define trusted domains that might have certificate issues but are generally safe
-          const trustedDomains = [
-            'localhost',
-            '127.0.0.1',
-            'local.',
-            '.local',
-            // Development servers
-            'webpack',
-            'vite',
-            // Known sites with certificate quirks
-            'example.com',
-            'test.',
-            '.test'
-          ]
-
-          const isTrustedDomain = trustedDomains.some(domain => url.includes(domain))
-          const isDevelopment = !app.isPackaged || process.env.NODE_ENV === 'development'
-
-          // Accept certificates for trusted domains or in development
-          if (isTrustedDomain || isDevelopment) {
-            console.log(`Accepting certificate for trusted domain: ${url}`)
+          if (choice === 1) { // Continue Anyway
             event.preventDefault()
             callback(true)
           } else {
-            // For production and untrusted domains, show warning but allow user choice
-            console.warn(`Certificate error for untrusted domain: ${url} - ${error}`)
-
-            // In production, reject potentially dangerous certificates
-            if (app.isPackaged && !isTrustedDomain) {
-              // Show a warning dialog to user
-              const { dialog } = require('electron')
-              const choice = dialog.showMessageBoxSync(this.mainWindow, {
-                type: 'warning',
-                buttons: ['Reject', 'Accept Anyway'],
-                defaultId: 0,
-                cancelId: 0,
-                title: 'Certificate Error',
-                message: `Certificate error for ${url}`,
-                detail: `Error: ${error}\n\nThis may indicate a security issue. Do you want to continue anyway?`
-              })
-
-              if (choice === 1) { // Accept Anyway
-                event.preventDefault()
-                callback(true)
-              } else {
-                callback(false)
-              }
-            } else {
-              event.preventDefault()
-              callback(true)
-            }
+            callback(false)
           }
         })
 
@@ -703,92 +507,15 @@ class AIBrowser {
 
     // Additional user agent data is set above
     
-    // Configure webview session request handling - this prevents the constant refreshing
+    // Keep headers minimal: only set a realistic User-Agent once at session level
     webviewSession.webRequest.onBeforeSendHeaders((details, callback) => {
       const requestHeaders = { ...details.requestHeaders }
-
-      // Remove ALL automation detection headers
-      delete requestHeaders['X-DevTools-Emulate-Network-Conditions-Client-Id']
-      delete requestHeaders['X-DevTools-Request-Id']
-      delete requestHeaders['X-Client-Data']
-      delete requestHeaders['X-Requested-With']
-      delete requestHeaders['X-Electron-Webview']
-
-      // Set consistent browser-like headers
       requestHeaders['User-Agent'] = userAgent
-      requestHeaders['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
-      requestHeaders['Accept-Language'] = 'en-US,en;q=0.9'
-      requestHeaders['Accept-Encoding'] = 'gzip, deflate, br'
-      requestHeaders['Cache-Control'] = 'max-age=0'
-      requestHeaders['Sec-Fetch-Dest'] = 'document'
-      requestHeaders['Sec-Fetch-Mode'] = 'navigate'
-      requestHeaders['Sec-Fetch-Site'] = 'none'
-      requestHeaders['Sec-Fetch-User'] = '?1'
-      requestHeaders['Upgrade-Insecure-Requests'] = '1'
-
-      // Add additional headers to appear more legitimate
-      requestHeaders['Sec-Ch-Ua'] = '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
-      requestHeaders['Sec-Ch-Ua-Mobile'] = '?0'
-      requestHeaders['Sec-Ch-Ua-Platform'] = '"macOS"'
-      requestHeaders['DNT'] = '1'
-
-      // Add referrer policy for better compatibility
-      requestHeaders['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-
       callback({ requestHeaders })
     })
     
-    // Handle response headers to remove CSP restrictions for Cloudflare
-    webviewSession.webRequest.onHeadersReceived((details, callback) => {
-      const responseHeaders = { ...details.responseHeaders }
-      
-      // Remove frame restrictions that might interfere with Cloudflare
-      delete responseHeaders['x-frame-options']
-      delete responseHeaders['X-Frame-Options']
-      
-      // Enhanced CSP handling based on URL patterns
-      if (details.url.includes('__cf_chl_rt_tk') || details.url.includes('cloudflare.com')) {
-        // Keep original CSP for Cloudflare pages but add minimal security
-        if (responseHeaders['Content-Security-Policy']) {
-          if (Array.isArray(responseHeaders['Content-Security-Policy'])) {
-            responseHeaders['Content-Security-Policy'] = responseHeaders['Content-Security-Policy'].map(policy =>
-              policy + "; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action *;"
-            )
-          } else {
-            responseHeaders['Content-Security-Policy'] = [responseHeaders['Content-Security-Policy'] + "; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action *;"]
-          }
-        }
-      } else if (details.url.includes('google.com') || details.url.includes('youtube.com') || details.url.includes('facebook.com') || details.url.includes('googletagmanager.com') || details.url.includes('googleusercontent.com') || details.url.includes('gstatic.com') || details.url.includes('paypal.com') || details.url.includes('stripe.com')) {
-        // More permissive CSP for Google services, payment processors, and major platforms
-        responseHeaders['Content-Security-Policy'] = [
-          "default-src 'self' https: data: blob: 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob: https://*.google.com https://*.googletagmanager.com https://*.googleusercontent.com https://*.gstatic.com https://*.youtube.com https://*.facebook.com https://*.paypal.com https://*.stripe.com; style-src 'self' 'unsafe-inline' https: data: https://*.google.com https://*.googletagmanager.com https://*.googleusercontent.com https://*.gstatic.com https://*.youtube.com https://*.facebook.com https://*.paypal.com https://*.stripe.com; img-src * data: blob: 'unsafe-inline'; connect-src * data: blob:; frame-src *; font-src * data:; worker-src * blob: data:; child-src * blob: data:; object-src 'none'; base-uri 'self'; form-action *; frame-ancestors 'none'; upgrade-insecure-requests;"
-        ]
-      } else {
-        // Temporarily disable CSP completely for debugging
-        delete responseHeaders['Content-Security-Policy']
-        // Also disable other security headers that might block requests
-        delete responseHeaders['X-Frame-Options']
-        delete responseHeaders['Referrer-Policy']
-        delete responseHeaders['Permissions-Policy']
-        console.log('All security headers disabled for debugging - pages should load now')
-      }
-
-      // Add minimal security headers for debugging (don't override if already disabled)
-      if (!responseHeaders['X-Frame-Options']) {
-        responseHeaders['X-Frame-Options'] = ['SAMEORIGIN']
-      }
-      if (!responseHeaders['Referrer-Policy']) {
-        responseHeaders['Referrer-Policy'] = ['strict-origin-when-cross-origin']
-      }
-      if (!responseHeaders['Permissions-Policy']) {
-        responseHeaders['Permissions-Policy'] = ['camera=(), microphone=(), geolocation=(), payment=()']
-      }
-
-      responseHeaders['X-Content-Type-Options'] = ['nosniff']
-      responseHeaders['X-XSS-Protection'] = ['1; mode=block']
-      
-      callback({ responseHeaders })
-    })
+    // Do not modify response security headers to avoid loops; let sites control CSP
+    // If specific domains need adjustments, handle them narrowly in the future
     
     // Set up permissions for the webview session
     webviewSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -858,35 +585,10 @@ class AIBrowser {
             if (window.gc) {
               window.gc()
             }
-
-            // Clear unused caches
-            if ('caches' in window) {
-              caches.keys().then(names => {
-                names.forEach(name => {
-                  caches.delete(name)
-                })
-              })
-            }
-
-            // Clear service worker registrations
-            if ('serviceWorker' in navigator) {
-              navigator.serviceWorker.getRegistrations().then(registrations => {
-                registrations.forEach(registration => {
-                  registration.unregister()
-                })
-              })
-            }
           })()
         `).catch(() => {
           // Silently fail if JavaScript execution fails
         })
-
-        // Optimize webview sessions
-        const webviewSession = session.fromPartition('persist:main')
-        webviewSession.clearCache().catch(() => {})
-        webviewSession.clearStorageData({
-          storages: ['cookies', 'localstorage', 'indexdb', 'websql']
-        }).catch(() => {})
       }
 
       // Force garbage collection in main process
@@ -937,17 +639,7 @@ class AIBrowser {
     const defaultSession = session.defaultSession
     defaultSession.setSpellCheckerEnabled(true)
 
-    // Set up periodic cleanup
-    setInterval(() => {
-      // Clear old cache entries
-      defaultSession.clearCache().catch(() => {})
-
-      // Clear old storage data
-      defaultSession.clearStorageData({
-        storages: ['cookies', 'localstorage'],
-        quotas: ['temporary']
-      }).catch(() => {})
-    }, 300000) // Clean every 5 minutes
+    // Avoid clearing caches/storage periodically to preserve session state
   }
 }
 

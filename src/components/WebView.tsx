@@ -16,6 +16,8 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [error, setError] = useState<{ message: string; details: string } | null>(null)
   const [isCloudflareChallenge, setIsCloudflareChallenge] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+  const [isRetrying, setIsRetrying] = useState(false)
   const { updateTab } = useBrowserStore()
   const { addHistoryEntry, canGoBack: historyCanGoBack, canGoForward: historyCanGoForward } = useHistoryStore()
 
@@ -199,6 +201,11 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
 
     const webview = webviewRef.current
     const isProduction = process.env.NODE_ENV === 'production'
+    
+    // Prevent webview from being recreated unnecessarily
+    if (webview.src && webview.src !== 'about:blank' && webview.src === tab.url) {
+      return // Webview already has the correct URL, don't recreate
+    }
 
     // Handle DOM ready to ensure webview is fully initialized
     const handleDomReady = () => {
@@ -316,6 +323,10 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
         clearTimeout(loadingTimeoutRef.current)
         loadingTimeoutRef.current = null
       }
+      
+      // Reset retry count on successful load
+      setRetryCount(0)
+      setIsRetrying(false)
 
       const title = webview.getTitle() || tab.title
       const loadTime = Date.now() - performanceRef.current.startTime
@@ -437,23 +448,40 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
         loadingTimeoutRef.current = null
       }
 
-      // ERR_ABORTED (-3) can happen for several reasons including Cloudflare challenges
+      // ERR_ABORTED (-3) is often caused by navigation changes or redirects - don't treat as error
       if (event.errorCode === -3) {
-        // Check if this is a Cloudflare challenge
-        if (event.validatedURL && (event.validatedURL.includes('__cf_chl') || event.validatedURL.includes('cloudflare'))) {
-          console.log('Cloudflare challenge in progress, allowing to continue...')
-          setIsCloudflareChallenge(true)
-          setLoadingProgress(30)
-          // Don't update loading state, let the challenge complete
-          return
-        }
-        // For other aborted loads (like new tab creation), just return
-        return
+        console.log('Navigation aborted (likely redirect or user action):', event.validatedURL)
+        return // Don't show error for aborted navigation
       }
 
-      console.log('Failed to load:', event.errorDescription, 'for URL:', event.validatedURL)
+      console.log('Failed to load:', event.errorDescription, 'for URL:', event.validatedURL, 'errorCode:', event.errorCode)
+      
+      // Only retry for true network errors, not navigation issues
+      const retryableErrors = [-105, -106, -109, -2, -7, -21, -100, -101, -102, -324]
+      const shouldRetry = retryableErrors.includes(event.errorCode) && retryCount < 2 && !isRetrying
+      
+      if (shouldRetry) {
+        console.log(`Auto-retrying failed load (attempt ${retryCount + 1}/2)...`)
+        setIsRetrying(true)
+        setRetryCount(retryCount + 1)
+        setLoadingProgress(10)
+        
+        // Wait a bit before retrying
+        setTimeout(() => {
+          if (webviewRef.current) {
+            webviewRef.current.reload()
+            setIsRetrying(false)
+          }
+        }, 2000) // Fixed delay to prevent rapid retries
+        
+        return
+      }
+      
+      // If we've exhausted retries or it's not a retryable error
       updateTab(tab.id, { isLoading: false })
       setLoadingProgress(0)
+      setRetryCount(0)
+      setIsRetrying(false)
 
       // Set appropriate error message based on error code
       let errorMessage = 'Failed to load page'
@@ -471,8 +499,19 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
       } else if (event.errorCode === -109) {
         errorMessage = 'Connection timed out'
         errorDetails = 'The connection to the server timed out. Please try again'
+      } else if (event.errorCode === -2) {
+        errorMessage = 'Failed to load resource'
+        errorDetails = 'The page resources could not be loaded. The site may be experiencing issues'
+      } else if (event.errorCode === -324) {
+        errorMessage = 'Empty response'
+        errorDetails = 'The server returned an empty response. Please try again'
       }
 
+      // Only show error if we've exhausted retries
+      if (retryCount >= 2) {
+        errorDetails += ` (Retried ${retryCount} times)`
+      }
+      
       setError({ message: errorMessage, details: errorDetails })
     }
     
@@ -676,16 +715,9 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
         // @ts-ignore - webview attributes are strings in HTML
         allowpopups="true"
         // @ts-ignore
-        plugins="true"
-        // @ts-ignore
         nodeintegration="false"
-        webpreferences="javascript=true,webgl=true,webSecurity=true,allowRunningInsecureContent=true,nodeIntegration=false,contextIsolation=true,experimentalFeatures=true,enableBlinkFeatures=CSSColorSchemeUARendering,backgroundThrottling=false,images=true,css=true,fonts=true,media=true,audio=true,video=true,plugins=true,databases=true,localStorage=true,sessionStorage=true,indexedDB=true,cache=true,appCache=true,webAudio=true,webRTC=true,sharedWorker=true,serviceWorker=true,backgroundSync=true"
         // @ts-ignore
-        disablewebsecurity="false"
-        // @ts-ignore
-        autosize="on"
-        // @ts-ignore
-        preload=""
+        webpreferences="contextIsolation=true"
         style={{
           width: '100%',
           height: '100%',
@@ -731,7 +763,7 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
       )}
 
       {/* Error State */}
-      {error && (
+      {error && !isRetrying && (
         <div
           className="absolute inset-0 bg-white flex items-center justify-center z-10"
           role="alert"
@@ -746,6 +778,7 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
             <button
               onClick={() => {
                 setError(null)
+                setRetryCount(0)
                 if (webviewRef.current) {
                   webviewRef.current.reload()
                 }
@@ -756,6 +789,22 @@ const WebView: React.FC<WebViewProps> = ({ tab }) => {
               Try Again
             </button>
           </div>
+        </div>
+      )}
+      
+      {/* Auto-retry indicator */}
+      {isRetrying && (
+        <div
+          className="absolute top-4 right-4 bg-blue-100 border border-blue-300 rounded-lg px-4 py-2 shadow-lg z-20 flex items-center gap-2"
+          role="status"
+          aria-live="polite"
+          aria-label="Auto-retrying page load"
+        >
+          <div
+            className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"
+            aria-hidden="true"
+          ></div>
+          <span className="text-sm text-blue-700 font-medium">Retrying... (attempt {retryCount}/3)</span>
         </div>
       )}
     </div>
