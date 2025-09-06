@@ -1,8 +1,6 @@
 import React, { useState } from 'react'
 import { useAIStore } from '../stores/aiStore'
 
-import MCPManager from './MCPManager'
-
 const MCPManager: React.FC = () => {
   const [mcpUrl, setMcpUrl] = useState('')
   const { mcpServers, addMcpServer } = useAIStore()

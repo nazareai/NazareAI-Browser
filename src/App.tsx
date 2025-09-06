@@ -30,7 +30,7 @@ function App() {
     }
     // Ensure search engine is always search.sh
     setSearchEngine('https://search.sh')
-  }, [])
+  }, [tabs.length]) // Watch tabs.length to ensure we always have at least one tab
 
   // Initialize AI connections on startup
   useEffect(() => {

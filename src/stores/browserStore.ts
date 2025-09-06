@@ -113,10 +113,17 @@ export const useBrowserStore = create<BrowserState>()(
       },
       
       closeTab: (tabId: string) => {
-        const { tabs, currentTab } = get()
+        const { tabs, currentTab, addTab } = get()
         const tabIndex = tabs.findIndex(tab => tab.id === tabId)
         
         if (tabIndex === -1) return
+        
+        // Don't close if it's the last tab - instead navigate to new tab page
+        if (tabs.length === 1) {
+          // Navigate the last tab to the new tab page instead of closing it
+          get().navigateToUrl('https://search.sh')
+          return
+        }
         
         const newTabs = tabs.filter(tab => tab.id !== tabId)
         let newCurrentTab = currentTab

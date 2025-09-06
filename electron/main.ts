@@ -6,10 +6,17 @@ import fetch from 'node-fetch'
 // Set the application name before anything else
 app.name = 'NazareAI Browser'
 
+// Force the app name in development
+if (!app.isPackaged) {
+  // In development, we need to set the name differently
+  app.commandLine.appendSwitch('app-name', 'NazareAI Browser')
+}
+
 // __dirname is already available in CommonJS modules
 
 class AIBrowser {
   private mainWindow: BrowserWindow | null = null
+  private aboutWindow: BrowserWindow | null = null
   // Fix production detection - check if app is packaged
   private isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
 
@@ -48,13 +55,117 @@ class AIBrowser {
     this.initIpcHandlers()
   }
 
+  private createAboutWindow() {
+    if (this.aboutWindow) {
+      this.aboutWindow.focus()
+      return
+    }
+
+    this.aboutWindow = new BrowserWindow({
+      width: 600,
+      height: 500,
+      title: `About ${app.name}`,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      modal: true,
+      parent: this.mainWindow || undefined,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+      },
+      titleBarStyle: 'hiddenInset',
+      show: false,
+    })
+
+    // Load the About page
+    const aboutHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>About NazareAI Browser</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: #f8fafc;
+            color: #1f2937;
+            text-align: center;
+            position: relative;
+          }
+          .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 50%;
+            background: #e5e7eb;
+            color: #6b7280;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+          }
+          .close-btn:hover {
+            background: #d1d5db;
+          }
+          .logo {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+          }
+          h1 { margin: 0 0 10px 0; font-size: 28px; }
+            .version { color: #6b7280; margin-bottom: 30px; }
+        </style>
+      </head>
+      <body>
+        <button class="close-btn" onclick="window.close()">×</button>
+        <div class="logo">NA</div>
+        <h1>NazareAI Browser</h1>
+          <div class="version">version released 6.9.2025</div>
+        <div style="margin-top: 40px; font-size: 12px; color: #9ca3af;">
+          © 2025 NazareAI. Built with Electron, React, and TypeScript.
+        </div>
+      </body>
+      </html>
+    `
+    this.aboutWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(aboutHTML)}`)
+
+    this.aboutWindow.once('ready-to-show', () => {
+      this.aboutWindow?.show()
+    })
+
+    this.aboutWindow.on('closed', () => {
+      this.aboutWindow = null
+    })
+  }
+
   private setupApplicationMenu() {
     // Create default menu with proper app name
     const template: any[] = [
       {
         label: app.name,
         submenu: [
-          { label: `About ${app.name}`, role: 'about' },
+          {
+            label: `About ${app.name}`,
+            click: () => this.createAboutWindow()
+          },
           { type: 'separator' },
           { label: 'Services', role: 'services', submenu: [] },
           { type: 'separator' },

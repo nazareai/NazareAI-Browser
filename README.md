@@ -125,25 +125,41 @@ The AI automatically detects and executes browser actions from natural language:
    npm install
    ```
 
-2. **Configure AI Provider**
+2. **Start Development Server**
    ```bash
-   npm run dev
+   npm run dev    # Starts both Vite (frontend) and Electron (desktop app)
    ```
-   - Open Settings → API Key Management
+   - The app will open automatically
+   - **Note**: In development mode, macOS will show "Electron" in the menu bar instead of "NazareAI Browser"
+
+3. **Configure AI Provider**
+   - Open Settings (⚙️ icon) → API Key Management
    - Add your API key (OpenAI, Anthropic, or OpenRouter)
    - Select preferred model
 
-3. **Enable Browser Control**
+4. **Enable Browser Control**
    - Press **⌘J** (Mac) or **Ctrl+J** (Windows/Linux) to open AI Chat
    - Click settings icon in chat header
    - Enable "Browser Control" feature
 
+### 🛠️ Development
+
+```bash
+npm run build    # You need to package it first
+npm run dev      # Start development server (Vite + Electron) - USE THIS FOR DEVELOPMENT
+```
+
+**Important Notes**:
+- ⚠️ `npm run start` does NOT work for development - always use `npm run dev`
+- In development mode, the app will show "Electron" in the macOS menu bar instead of "NazareAI Browser"
+- This is a known Electron limitation that only affects development - the production build will display the correct app name
+
 ### 🎨 Building for Production
 
-#### Option 1: Quick Development Build
+#### Option 1: Quick Production Build
 ```bash
-npm run build    # Build for development
-npm run start    # Run built version
+npm run build    # Build the app
+# Note: To run the built version, you need to package it first (see Option 2 or 3)
 ```
 
 #### Option 2: macOS DMG Package (Recommended for Distribution)
@@ -342,6 +358,24 @@ Models: anthropic/claude-sonnet-4, anthropic/claude-opus-4.1
 - **WebView**: Renders web content with automation capabilities
 - **AIChat**: AI assistant interface with browser control
 - **CommandPalette**: Quick action interface
+
+## 🐛 Troubleshooting
+
+### App Shows "Electron" Instead of "NazareAI Browser" in Menu Bar
+
+This is a known limitation when running in development mode (`npm run dev`). The app name will display correctly when:
+
+1. **Built and packaged**: Run `npm run package:mac` to create a proper `.app` bundle
+2. **DMG installer**: Run `npm run build:dmg` for the best experience
+3. **Production build**: The packaged app will show "NazareAI Browser" correctly
+
+This only affects the menu bar name - all other functionality works normally in development.
+
+### Common Issues
+
+- **Can't close last tab**: By design, the browser always keeps at least one tab open
+- **API keys not saving**: Make sure you click "Save" after entering your API key
+- **AI commands not working**: Ensure "Browser Control" is enabled in the AI chat settings
 
 ## Contributing
 

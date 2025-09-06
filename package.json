@@ -5,7 +5,7 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:electron\" \"npm run dev:renderer\"",
-    "dev:electron": "nodemon --exec 'ELECTRON_FORCE_IS_PACKAGED=true electron dist/main.js' --watch dist/main.js",
+    "dev:electron": "nodemon --exec 'electron dist/main.js' --watch dist/main.js",
     "dev:renderer": "vite",
     "build": "NODE_ENV=production npm run build:renderer && npm run build:electron",
     "build:renderer": "NODE_ENV=production vite build",
@@ -95,13 +95,7 @@
         }
       ],
       "icon": "build/icon.icns",
-      "extendInfo": {
-        "CFBundleName": "NazareAI Browser",
-        "CFBundleDisplayName": "NazareAI Browser",
-        "CFBundleExecutable": "NazareAI Browser",
-        "LSApplicationCategoryType": "public.app-category.productivity",
-        "NSHumanReadableCopyright": "Copyright © 2025 NazareAI"
-      }
+      "extendInfo": "./Info.plist"
     },
     "dmg": {
       "contents": [
